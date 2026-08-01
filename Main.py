@@ -1,7 +1,7 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
-from groq import Groq
+from groq import AsyncGroq
 import json
 import os
 import random
@@ -9,6 +9,7 @@ import logging
 import traceback
 import aiohttp
 import re
+from datetime import datetime, timedelta
 from keep_alive import keep_alive
 
 # ================= الإعدادات =================
@@ -20,9 +21,11 @@ APPLY_CHANNEL_ID = 1532414385794973756
 LOG_CHANNEL_ID = 1532414637373657169
 STAFF_ROLE_ID = 1524373417137016833
 ACCEPTED_ROLE_ID = 1532414257772101812
-
-# 🆔 آيدي الرتبة المراد إزالتها تلقائياً عند القبول:
 UNACCEPTED_ROLE_ID = 1532414262343897319 
+OVERDUE_ROLE_ID = 1533068412547497984
+
+# 🆔 آيدي الروم المخصصة لأمر المخالفات فقط:
+TICKET_ALLOWED_CHANNEL_ID = 1532414607577055465
 
 USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
 # ================================================
@@ -38,7 +41,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-groq_client = Groq(api_key=GROQ_API_KEY)
+groq_client = AsyncGroq(api_key=GROQ_API_KEY)
 
 active_applicants: set[int] = set()
 
@@ -47,31 +50,24 @@ OATH_TEXT = (
     "و أن احترم الاعضاء جميعا و أن احترم جميع أعضاء الإدارة"
 )
 
-# ترتيب الأسئلة الرسمي:
-# index 0: الاسم الحقيقي
-# index 1: اسم روبلوكس
-# index 2: العمر
-# index 3: الصورة (يتم تعويضها بـ "[تم إرفاق الصورة]")
-# index 4: التعهد بالقوانين
-# index 5: القسم المكتوب
 QUESTIONS = [
     "ما هو اسمك الحقيقي؟",
     "اسمك روبلوكس (الأساسي)؟",
     "كم عمرك؟",
     "📸 يرجى إرسال لقطة شاشة (صورة) لحسابك في روبلوكس يظهر فيها اسم الحساب بوضوح:",
-    "هل تتعهد بالالتزام الكامل بقوانين السيرفر؟",
+    "سؤال عن المخالفات المرورية:\nكم تبلغ قيمة مخالفة (قطع الإشارة) المعتمدة في السيرفر؟\nأ) 500 داركي\nب) 3000 داركي\nج) 1000 داركي",
     f"اكتب القسم التالي بالكامل واستبدل (اسمك) باسمك الحقيقي، ثم أرسله كرسالة:\n\n\"{OATH_TEXT}\""
 ]
 
 SYSTEM_PROMPT = """أنت مسؤول مراجعة وتدقيق نصوص طلبات الانضمام لسيرفر رول بلاي روبلوكس.
 يجب عليك قبول الطلب تلقائياً طالما أن البيانات المدخلة منطقية:
 1. العمر: يجب أن يكون رقماً مقبولاً (مثلاً بين 8 و 99).
-2. التعهد: أي إجابة تدل على الموافقة أو الالتزام تعتبر مقبولة وصحيحة.
+2. سؤال المخالفات المرورية: الإجابة الصحيحة لقيمة مخالفة (قطع الإشارة) هي "3000 داركي" أو خيار "ب". أي إجابة تدل على معرفة المبلغ الصحيح (3000) تعتبر مقبولة وصحيحة.
 3. القسم: يجب أن يكون المتقدم قد كتب نص القسم بشكل سليم وقام باستبدال كلمة (اسمك) باسمه الحقيقي أو كتب اسمه بدلاً عنها.
 
 ردك يجب أن يكون كود JSON فقط دون أي مقدمات أو مؤخرات كالتالي تماماً:
 {"decision": "accept", "reason": "تم قبول طلبك بنجاح والبيانات صحيحة"}
-أو إذا كانت الأجوبة فارغة أو مسيئة أو القسم خاطئ تماماً:
+أو إذا كانت الأجوبة فارغة أو مسيئة أو الإجابة على سؤال المخالفات خاطئة أو القسم خاطئ تماماً:
 {"decision": "reject", "reason": "اكتب هنا سبب الرفض الواضح بالعربية"}"""
 
 
@@ -110,19 +106,19 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
     return False, username
 
 
-def evaluate_with_ai(real_name: str, primary: str, age: str, pledge: str, oath: str) -> dict:
+async def evaluate_with_ai(real_name: str, primary: str, age: str, traffic_quiz: str, oath: str) -> dict:
     text_content = (
         f"الاسم الحقيقي للمتقدم: {real_name}\n"
         f"حساب روبلوكس الأساسي: {primary}\n"
         f"العمر المدخل: {age}\n"
-        f"التعهد بالقوانين: {pledge}\n"
+        f"إجابة سؤال المخالفات المرورية (قطع الإشارة): {traffic_quiz}\n"
         f"القسم الذي حلفه المتقدم: {oath}\n"
         f"القسم الأصلي المطلوب للمطابقة: {OATH_TEXT}"
     )
         
     try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant", # نموذج نصوص فائق السرعة والموثوقية
+        response = await groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
             max_tokens=150,
             temperature=0.1,
             messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": text_content}]
@@ -135,7 +131,6 @@ def evaluate_with_ai(real_name: str, primary: str, age: str, pledge: str, oath: 
         return json.loads(raw_text)
     except Exception as e:
         logger.error(f"خطأ برمجى في مراجعة الـ AI: {e}")
-        # في حال حدوث عطل طارئ، لا تجعل البوت يرفض بل اجعله يقبل كحالة افتراضية لتفادي تعليق المستخدمين
         return {"decision": "accept", "reason": "تم القبول التلقائي لسلامة النصوص المكتوبة"}
 
 
@@ -162,7 +157,8 @@ async def execute_acceptance(guild: discord.Guild, user_id: int, real_name: str,
         "discord_tag": str(member) if member else f"User_{user_id}",
         "real_name": real_name,
         "roblox_primary": primary_name,
-        "rp_id": rp_id
+        "rp_id": rp_id,
+        "tickets": []
     }
     save_users(users)
     return rp_id
@@ -213,7 +209,7 @@ class ApplyView(discord.ui.View):
                 await dm.send(embed=discord.Embed(title=f"❓ السؤال {idx} من أصل {len(QUESTIONS)}", description=f"**{q}**", color=0x3498db))
                 try:
                     msg = await bot.wait_for("message", check=check, timeout=300)
-                    if idx == 4:  # صورة لقطة الشاشة 📸
+                    if idx == 4:
                         if msg.attachments:
                             image_url = msg.attachments[0].url
                             answers.append("[تم إرفاق الصورة]")
@@ -228,7 +224,6 @@ class ApplyView(discord.ui.View):
 
             await dm.send(embed=discord.Embed(title="🔍 جاري المعالجة والمطابقة...", description="يتم الآن معالجة بياناتك، انتظر ثوانٍ...", color=discord.Color.orange()))
             
-            # الفهرس 1 هو اسم روبلوكس المكتوب
             primary_ok, primary_name = await check_roblox_username(answers[1])
 
             if not primary_ok:
@@ -236,17 +231,11 @@ class ApplyView(discord.ui.View):
                 await _send_log_async(interaction, answers, "reject", f"الحساب '{answers[1]}' غير موجود في روبلوكس", answers[0], primary_name, None, image_url)
                 return
 
-            # تمرير المتغيرات بشكل دقيق للذكاء الاصطناعي بناءً على الفهارس الصحيحة:
-            # الاسم الحقيقي: answers[0]
-            # اسم الحساب: primary_name
-            # العمر: answers[2]
-            # التعهد: answers[4] (الفهرس 3 هو صورة تم تخطيها)
-            # القسم: answers[5]
-            result = evaluate_with_ai(
+            result = await evaluate_with_ai(
                 real_name=answers[0],
                 primary=primary_name,
                 age=answers[2],
-                pledge=answers[4],
+                traffic_quiz=answers[4],
                 oath=answers[5]
             )
             
@@ -278,6 +267,7 @@ async def _send_log_async(interaction, answers, decision, reason, real_name, pri
     embed.add_field(name="الاسم الحقيقي", value=f"`{real_name}`", inline=True)
     embed.add_field(name="حساب روبلوكس", value=f"`{primary}`", inline=True)
     embed.add_field(name="العمر", value=answers[2] if len(answers) > 2 else "غير معروف", inline=True)
+    embed.add_field(name="إجابة سؤال المخالفات", value=answers[4] if len(answers) > 4 else "غير متوفر", inline=False)
     embed.add_field(name="قرار البوت الحالي", value="✅ قبول تلقائي" if decision == "accept" else "❌ رفض تلقائي", inline=True)
     embed.add_field(name="السبب", value=reason, inline=True)
     
@@ -362,25 +352,84 @@ class RevokeView(discord.ui.View):
         await interaction.message.edit(view=self)
 
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_apply(ctx):
-    embed = discord.Embed(title="📝 تقديم طلب رول بلاي", description="اضغط الزر بالأسفل وجاوب على الأسئلة بالخاص.", color=discord.Color.blurple())
-    channel = bot.get_channel(APPLY_CHANNEL_ID)
-    await channel.send(embed=embed, view=ApplyView())
-    await ctx.send("✅ تم إرسال رسالة التقديم.")
+# ==================== نظام المخالفات المرورية ====================
 
+class FineSelect(discord.ui.Select):
+    def __init__(self, target_member: discord.Member, rp_id: str):
+        self.target_member = target_member
+        self.rp_id = rp_id
 
-@bot.event
-async def on_ready():
-    bot.add_view(ApplyView())
-    await bot.change_presence(status=discord.Status.online, activity=discord.CustomActivity(name="Distributing"))
-    logger.info(f"✅ البوت شغال باسم {bot.user}")
+        options = [
+            discord.SelectOption(label="سرعة زائدة", description="الغرامة: 500 داركي", value="500|سرعة زائدة"),
+            discord.SelectOption(label="قطع الإشارة", description="الغرامة: 3000 داركي", value="3000|قطع الإشارة"),
+            discord.SelectOption(label="إزالة لوحة (حجز)", description="الغرامة: 2000 داركي", value="2000|إزالة لوحة (حجز)"),
+            discord.SelectOption(label="عدم إضاءة النور أثناء الليل", description="الغرامة: 300 داركي", value="300|عدم إضاءة النور أثناء الليل"),
+            discord.SelectOption(label="عدم الالتزام بالمسار", description="الغرامة: 400 داركي", value="400|عدم الالتزام بالمسار"),
+            discord.SelectOption(label="إزعاج بدون سبب (حجز)", description="الغرامة: 700 داركي", value="700|إزعاج بدون سبب (حجز)"),
+            discord.SelectOption(label="وقوف وسط الطريق (حجز)", description="الغرامة: 1000 داركي", value="1000|وقوف وسط الطريق (حجز)"),
+            discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 200 داركي", value="200|عدم إفساح الطريق لمركبات الطوارئ"),
+            discord.SelectOption(label="تعديل بدون تصريح (حجز/حرمان)", description="الغرامة: 10000 داركي", value="10000|تعديل بدون تصريح (حجز)"),
+            discord.SelectOption(label="تفحيط (حجز)", description="الغرامة: 5000 داركي", value="5000|تفحيط (حجز)"),
+            discord.SelectOption(label="زرة (حجز)", description="الغرامة: 2000 داركي", value="2000|زرة (حجز)"),
+        ]
 
+        super().__init__(placeholder="📋 اختر نوع المخالفة المرورية...", min_values=1, max_values=1, options=options)
 
-def run_bot():
-    keep_alive()
-    bot.run(TOKEN, log_handler=None)
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
 
-if __name__ == "__main__": run_bot()
-            
+        amount, reason = self.values[0].split("|")
+        amount = int(amount)
+
+        users = load_users()
+        user_key = str(self.target_member.id)
+
+        if user_key not in users:
+            users[user_key] = {
+                "discord_tag": str(self.target_member),
+                "real_name": self.target_member.display_name,
+                "rp_id": self.rp_id,
+                "tickets": []
+            }
+        
+        if "tickets" not in users[user_key]:
+            users[user_key]["tickets"] = []
+
+        now_str = datetime.now().isoformat()
+        users[user_key]["tickets"].append({
+            "amount": amount,
+            "reason": reason,
+            "issuer": interaction.user.display_name,
+            "issued_at": now_str,
+            "paid": False
+        })
+        save_users(users)
+
+        embed = discord.Embed(
+            title="🚔 وزارة الداخلية - إشعار مخالفة مرورية",
+            description="مخالفة مرورية جديدة صادرة من إدارة المرور والترخيص.",
+            color=0xe74c3c
+        )
+        embed.add_field(name="👤 المواطن", value=self.target_member.mention, inline=True)
+        embed.add_field(name="🆔 رقم الهوية المرورية", value=f"`{self.rp_id}`", inline=True)
+        embed.add_field(name="💰 قيمة الغرامة", value=f"**{amount:,} داركي**", inline=True)
+        embed.add_field(name="📝 نوع المخالفة", value=f"`{reason}`", inline=False)
+        embed.add_field(name="👮‍♂️ العسكري المحرر", value=f"{interaction.user.mention} (`{interaction.user.display_name}`)", inline=False)
+        
+        embed.add_field(
+            name="🔴 ملاحظات هامة",
+            value="• جهلك بالقوانين لا يرفع عنك العقوبة.\n"
+                  "• المخالفات وُضعت للحفاظ على سلامتكم من خطر الطريق.\n"
+                  "• ⚠️ **مهلة التسديد هي 7 أيام**، وفي حال عدم التسديد سيتم إعطاؤك رتبة المطلوبين/المتأخرين تلقائياً.\n"
+                  "• في حال محاولة الهروب سيتم تحويلك للسجن مباشرة.",
+            inline=False
+        )
+        embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
+
+        traffic_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if traffic_channel:
+            await traffic_channel.send(embed=embed)
+
+        try:
+            embed_dm = embed.copy()
+            embed_dm.title = "🚨 إشعار مخالفة مرورية جدي
