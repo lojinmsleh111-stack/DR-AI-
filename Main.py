@@ -22,7 +22,7 @@ STAFF_ROLE_ID = 1524373417137016833
 ACCEPTED_ROLE_ID = 1532414257772101812
 
 # 🆔 آيدي الرتبة المراد إزالتها تلقائياً عند القبول:
-UNACCEPTED_ROLE_ID = 1524374666435887104  
+UNACCEPTED_ROLE_ID = 1532414262343897319 
 
 USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
 # ================================================
