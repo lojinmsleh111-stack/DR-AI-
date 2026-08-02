@@ -430,11 +430,13 @@ class FineSelect(discord.ui.Select):
         if traffic_channel:
             await traffic_channel.send(embed=embed)
 
-        try:
+                try:
             await self.target_member.send(embed=embed)
         except discord.Forbidden:
+            pass
 
         await interaction.followup.send(content=f"✅ تم تحرير مخالفة `{reason}` للمواطن {self.target_member.mention} بنجاح!", ephemeral=True)
+        
 
 
 class FineView(discord.ui.View):
