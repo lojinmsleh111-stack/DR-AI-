@@ -1,88 +1,150 @@
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands
+import asyncio
+from groq import AsyncGroq
 import json
 import os
 import random
 import logging
+import traceback
+import aiohttp
+import re
 from datetime import datetime, timedelta
-from flask import Flask
-from threading import Thread
+from keep_alive import keep_alive
 
-# ==================== إعدادات التسجيل ====================
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("discord_bot")
+# ================= الإعدادات والمتغيرات =================
+# قراءة التوكن بأي اسم كان في البيئة تجنباً للمشاكل
+TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("DISCORD_TOKEN")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-# ==================== الإعدادات والثوابت ====================
-TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_BOT_TOKEN_HERE")
-GUILD_ID = 1532413725515321354  # آيدي السيرفر
+GUILD_ID = 1532390688187220159
+APPLY_CHANNEL_ID = 1532414385794973756
+LOG_CHANNEL_ID = 1532414637373657169
+STAFF_ROLE_ID = 1524373417137016833
+ACCEPTED_ROLE_ID = 1532414257772101812
+UNACCEPTED_ROLE_ID = 1532414262343897319 
+OVERDUE_ROLE_ID = 1533068412547497984
 
-# معرفات الرتب
-STAFF_ROLE_ID = 1532414219843276820        # رتبة العسكري / الإدارة المسموح لهم بإدارة المخالفات
-PAYMENT_OFFICER_ROLE_ID = 1532414219843276820 # الرتبة المسموح لها بتأكيد تسديد المخالفات
-ACCEPTED_ROLE_ID = 1532414282367762604     # رتبة المقبولين
-UNACCEPTED_ROLE_ID = 1532414332401877074   # رتبة غير المقبولين
-OVERDUE_ROLE_ID = 1532414352220098670      # رتبة إيقاف الخدمات
+# رتبة المسؤول المصرح له بضغط زر التسديد
+PAYMENT_OFFICER_ROLE_ID = 1532414219843276820
 
-# معرفات الرومات
-APPLY_CHANNEL_ID = 1532414578502148157          # روم التقديم
-LOG_CHANNEL_ID = 1532414637373657169            # روم السجلات (اللوق)
-TICKET_ALLOWED_CHANNEL_ID = 1532414607577055465  # روم المخالفات والتصاريح
+# 🆔 آيدي الروم المخصصة لأمر المخالفات والتصاريح:
+TICKET_ALLOWED_CHANNEL_ID = 1532414607577055465
 
-# ملف إعدادات البيانات
-DATA_FILE = "users_data.json"
+USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+# ================================================
 
-# ==================== إعداد البوت ====================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("bot")
+
 intents = discord.Intents.default()
-intents.message_content = True
 intents.members = True
-
+intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ==================== خادم Flask لإبقاء البوت نشطاً ====================
-app = Flask('')
+# تهيئة عميل Groq للذكاء الاصطناعي
+groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-@app.route('/')
-def home():
-    return "Bot is alive!"
+active_applicants: set[int] = set()
 
-def run_flask():
-    # Render يحدد المنفذ تلقائياً عبر البيئة
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-    
+OATH_TEXT = (
+    "اقسم بالله العظيم انا (اسمك) أن التزم بجميع قوانين السيرفر و أن لا اخرب أثناء الرول بلاي "
+    "و أن احترم الاعضاء جميعا و أن احترم جميع أعضاء الإدارة"
+)
 
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.start()
+QUESTIONS = [
+    "ما هو اسمك الحقيقي؟",
+    "اسمك روبلوكس (الأساسي)؟",
+    "كم عمرك؟",
+    "📸 يرجى إرسال لقطة شاشة (صورة) لحسابك في روبلوكس يظهر فيها اسم الحساب بوضوح:",
+    "سؤال عن المخالفات المرورية:\nكم تبلغ قيمة مخالفة (قطع الإشارة) المعتمدة في السيرفر؟\nأ) 500 داركي\nب) 3000 داركي\nج) 1000 داركي",
+    f"اكتب القسم التالي بالكامل واستبدل (اسمك) باسمك الحقيقي، ثم أرسله كرسالة:\n\n\"{OATH_TEXT}\""
+]
 
-# ==================== التعامل مع قواعد البيانات ====================
-def load_users():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"خطأ أثناء تحميل البيانات: {e}")
-        return {}
+SYSTEM_PROMPT = """أنت مسؤول مراجعة وتدقيق نصوص طلبات الانضمام لسيرفر رول بلاي روبلوكس.
+يجب عليك قبول الطلب تلقائياً طالما أن البيانات المدخلة منطقية:
+1. العمر: يجب أن يكون رقماً مقبولاً (مثلاً بين 8 و 99).
+2. سؤال المخالفات المرورية: الإجابة الصحيحة لقيمة مخالفة (قطع الإشارة) هي "3000 داركي" أو خيار "ب". أي إجابة تدل على معرفة المبلغ الصحيح (3000) تعتبر مقبولة وصحيحة.
+3. القسم: يجب أن يكون المتقدم قد كتب نص القسم بشكل سليم وقام باستبدال كلمة (اسمك) باسمه الحقيقي أو كتب اسمه بدلاً عنها.
 
-def save_users(data):
-    try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        logger.error(f"خطأ أثناء حفظ البيانات: {e}")
+ردك يجب أن يكون كود JSON فقط دون أي مقدمات أو مؤخرات كالتالي تماماً:
+{"decision": "accept", "reason": "تم قبول طلبك بنجاح والبيانات صحيحة"}
+أو إذا كانت الأجوبة فارغة أو مسيئة أو الإجابة على سؤال المخالفات خاطئة أو القسم خاطئ تماماً:
+{"decision": "reject", "reason": "اكتب هنا سبب الرفض الواضح بالعربية"}"""
 
-def generate_unique_id():
+
+def load_users() -> dict:
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception: pass
+    return {}
+
+def save_users(data: dict):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def generate_unique_id() -> str:
     users = load_users()
-    existing_ids = {u.get("rp_id") for u in users.values() if "rp_id" in u}
+    existing = {v.get("rp_id") for v in users.values() if isinstance(v, dict)}
     while True:
-        new_id = str(random.randint(100000, 999999))
-        if new_id not in existing_ids:
+        new_id = str(random.randint(1000, 999999))
+        if new_id not in existing:
             return new_id
 
-# ==================== نظام القبول التلقائي وتغيير الاسم ====================
+
+async def check_roblox_username(username: str) -> tuple[bool, str]:
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = {"usernames": [username.strip()], "excludeBannedUsers": False}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    results = data.get("data", [])
+                    if results:
+                        return True, results[0].get("name", username)
+                    return False, username
+    except Exception: pass
+    return False, username
+
+
+async def evaluate_with_ai(real_name: str, primary: str, age: str, traffic_quiz: str, oath: str) -> dict:
+    if not groq_client:
+        return {"decision": "accept", "reason": "تم القبول التلقائي"}
+
+    text_content = (
+        f"الاسم الحقيقي للمتقدم: {real_name}\n"
+        f"حساب روبلوكس الأساسي: {primary}\n"
+        f"العمر المدخل: {age}\n"
+        f"إجابة سؤال المخالفات المرورية (قطع الإشارة): {traffic_quiz}\n"
+        f"القسم الذي حلفه المتقدم: {oath}\n"
+        f"القسم الأصلي المطلوب للمطابقة: {OATH_TEXT}"
+    )
+        
+    try:
+        response = await groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            max_tokens=150,
+            temperature=0.1,
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": text_content}]
+        )
+        
+        raw_text = response.choices[0].message.content.strip()
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        return json.loads(raw_text)
+    except Exception as e:
+        logger.error(f"خطأ في مراجعة الـ AI: {e}")
+        return {"decision": "accept", "reason": "تم القبول التلقائي لسلامة النصوص المكتوبة"}
+
+
 async def execute_acceptance(guild: discord.Guild, user_id: int, real_name: str, primary_name: str) -> str:
     rp_id = generate_unique_id()
     member = guild.get_member(user_id)
@@ -97,7 +159,7 @@ async def execute_acceptance(guild: discord.Guild, user_id: int, real_name: str,
         try: await member.remove_roles(unaccepted_role)
         except: pass
 
-    # تغيير الاسم لتبدأ بـ DR بدلاً من RC
+    # التسمية الجديدة المعتمدة DR
     if member:
         try: await member.edit(nick=f"DR | {primary_name} | {rp_id}")
         except: pass
@@ -114,315 +176,193 @@ async def execute_acceptance(guild: discord.Guild, user_id: int, real_name: str,
     save_users(users)
     return rp_id
 
-# ==================== نموذج التقديم (Modal) ====================
-class ApplyModal(discord.ui.Modal, title="📝 نموذج التقديم للرول بلاي"):
-    real_name = discord.ui.TextInput(label="الاسم الحقيقي", placeholder="أدخل اسمك الحقيقي...", required=True)
-    roblox_primary = discord.ui.TextInput(label="اسم حساب روبلوكس الرئيسي", placeholder="Primary Roblox Username...", required=True)
-    roblox_alt = discord.ui.TextInput(label="اسم حساب روبلوكس الاحتياطي (إن وجد)", placeholder="Alt Roblox Username...", required=False)
-    age = discord.ui.TextInput(label="العمر", placeholder="أدخل عمرك...", required=True, max_length=3)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
-        user = interaction.user
-
-        rp_id = await execute_acceptance(guild, user.id, self.real_name.value, self.roblox_primary.value)
-
-        embed_log = discord.Embed(
-            title="📥 طلب تقديم جديد (تم القبول تلقائياً)",
-            color=discord.Color.green(),
-            timestamp=datetime.now()
-        )
-        embed_log.add_field(name="العضو", value=user.mention, inline=True)
-        embed_log.add_field(name="الاسم الحقيقي", value=self.real_name.value, inline=True)
-        embed_log.add_field(name="رقم الهوية (RP ID)", value=f"`{rp_id}`", inline=True)
-        embed_log.add_field(name="حساب روبلوكس الرئيسي", value=self.roblox_primary.value, inline=False)
-        embed_log.add_field(name="حساب روبلوكس الاحتياطي", value=self.roblox_alt.value or "لا يوجد", inline=False)
-        embed_log.add_field(name="العمر", value=self.age.value, inline=True)
-        embed_log.set_thumbnail(url=user.display_avatar.url)
-
-        log_channel = guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            await log_channel.send(embed=embed_log)
-
-        try:
-            embed_dm = discord.Embed(
-                title="🎉 تهانينا! تم قبولك في الرول بلاي",
-                description=f"مرحباً بك **{self.real_name.value}**، تم قبول تقديمك بنجاح وحصولك على رتبة التفعيل.\n\n"
-                            f"🆔 **رقم الهوية الخاص بك:** `{rp_id}`\n"
-                            f"🏷️ **اسمك في السيرفر:** `DR | {self.roblox_primary.value} | {rp_id}`",
-                color=discord.Color.blue()
-            )
-            await user.send(embed=embed_dm)
-        except: pass
-
-        await interaction.followup.send("✅ تم تسجيل تقديمك وقبولك بنجاح! تم تحديث رتبك واسمك.", ephemeral=True)
 
 class ApplyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📝 تقديم طلب التفعيل", style=discord.ButtonStyle.primary, custom_id="apply_button_pers")
-    async def apply_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ApplyModal())
+    @discord.ui.button(label="تقديم طلب", style=discord.ButtonStyle.blurple, emoji="📝", custom_id="apply_button")
+    async def apply(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+        if user_id in active_applicants:
+            return await interaction.response.send_message("⚠️ عندك تقديم شغال حالياً بالخاص.", ephemeral=True)
 
-# ==================== زر تسديد المخالفة ====================
-class PayFineButton(discord.ui.View):
-    def __init__(self, target_user_id: int, ticket_index: int):
-        super().__init__(timeout=None)
-        self.target_user_id = target_user_id
-        self.ticket_index = ticket_index
-
-    @discord.ui.button(label="💳 تم تسديد المخالفة", style=discord.ButtonStyle.success, custom_id="pay_fine_btn")
-    async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # التحقق من امتلاك الرتبة المحددة
-        officer_role = interaction.guild.get_role(PAYMENT_OFFICER_ROLE_ID)
-        if officer_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ عفواً، هذا الزر مخصص للمسؤولين المصرح لهم بتأكيد التسديد فقط!", ephemeral=True)
-
-        users = load_users()
-        user_key = str(self.target_user_id)
-
-        if user_key not in users or "tickets" not in users[user_key]:
-            return await interaction.response.send_message("❌ لم يتم العثور على سجل المخالفة هذا!", ephemeral=True)
-
-        tickets = users[user_key]["tickets"]
-        if self.ticket_index >= len(tickets):
-            return await interaction.response.send_message("❌ المخالفة غير موجودة أو تم تسديدها سابقاً!", ephemeral=True)
-
-        # تحديث حالة السداد
-        tickets[self.ticket_index]["paid"] = True
-        save_users(users)
-
-        # تعطيل الزر
-        button.disabled = True
-        button.label = f"✅ تم التسديد بواسطة {interaction.user.display_name}"
-        button.style = discord.ButtonStyle.secondary
-        await interaction.message.edit(view=self)
-
-        await interaction.response.send_message(f"✅ تم تأكيد تسديد المخالفة للمواطن <@{self.target_user_id}> بواسطة {interaction.user.mention}.", ephemeral=False)
-
-        # التحقق مما إذا كان المواطن قد سدد جميع المخالفات لإزالة رتبة إيقاف الخدمات
-        member = interaction.guild.get_member(self.target_user_id)
-        if member:
-            has_unpaid = any(not t.get("paid", False) for t in tickets)
-            if not has_unpaid:
-                overdue_role = interaction.guild.get_role(OVERDUE_ROLE_ID)
-                if overdue_role and overdue_role in member.roles:
-                    try:
-                        await member.remove_roles(overdue_role)
-                        await interaction.channel.send(f"🟢 **إلغاء إيقاف خدمات:** تم سداد جميع المخالفات بحق المواطن {member.mention} وتم رفع إيقاف الخدمات عنه بنجاح.")
-                    except: pass
-
-# ==================== نظام المخالفات المرورية ====================
-class FineSelect(discord.ui.Select):
-    def __init__(self, target_member: discord.Member, rp_id: str, proof_url: str):
-        self.target_member = target_member
-        self.rp_id = rp_id
-        self.proof_url = proof_url
-
-        options = [
-            discord.SelectOption(label="سرعة زائدة", description="الغرامة: 500 داركي", value="500|سرعة زائدة"),
-            discord.SelectOption(label="قطع الإشارة", description="الغرامة: 3000 داركي", value="3000|قطع الإشارة"),
-            discord.SelectOption(label="إزالة لوحة (حجز)", description="الغرامة: 2000 داركي", value="2000|إزالة لوحة (حجز)"),
-            discord.SelectOption(label="عدم إضاءة النور أثناء الليل", description="الغرامة: 300 داركي", value="300|عدم إضاءة النور أثناء الليل"),
-            discord.SelectOption(label="عدم الالتزام بالمسار", description="الغرامة: 400 داركي", value="400|عدم الالتزام بالمسار"),
-            discord.SelectOption(label="إزعاج بدون سبب (حجز)", description="الغرامة: 700 داركي", value="700|إزعاج بدون سبب (حجز)"),
-            discord.SelectOption(label="وقوف وسط الطريق (حجز)", description="الغرامة: 1000 داركي", value="1000|وقوف وسط الطريق (حجز)"),
-            discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 2000 داركي", value="2000|عدم إفساح الطريق لمركبات الطوارئ"),
-            discord.SelectOption(label="تعديل بدون تصريح (حجز/حرمان)", description="الغرامة: 10000 داركي", value="10000|تعديل بدون تصريح (حجز)"),
-            discord.SelectOption(label="تفحيط (حجز)", description="الغرامة: 5000 داركي", value="5000|تفحيط (حجز)"),
-            discord.SelectOption(label="زرة (حجز)", description="الغرامة: 2000 داركي", value="2000|زرة (حجز)"),
-        ]
-
-        super().__init__(placeholder="📋 اختر نوع المخالفة المرورية...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        amount, reason = self.values[0].split("|")
-        amount = int(amount)
-
-        users = load_users()
-        user_key = str(self.target_member.id)
-
-        if user_key not in users:
-            users[user_key] = {
-                "discord_tag": str(self.target_member),
-                "real_name": self.target_member.display_name,
-                "rp_id": self.rp_id,
-                "tickets": [],
-                "permits": []
-            }
-
-        if "tickets" not in users[user_key]:
-            users[user_key]["tickets"] = []
-
-        now_str = datetime.now().isoformat()
-        ticket_data = {
-            "amount": amount,
-            "reason": reason,
-            "issuer": interaction.user.display_name,
-            "issued_at": now_str,
-            "paid": False,
-            "proof_url": self.proof_url
-        }
-        users[user_key]["tickets"].append(ticket_data)
-        save_users(users)
-
-        ticket_index = len(users[user_key]["tickets"]) - 1
-
-        embed = discord.Embed(
-            title="🚔 وزارة الداخلية - إشعار مخالفة مرورية",
-            description=f"تم إدخال مخالفة مرورية جديدة بحق المواطن {self.target_member.mention}.",
-            color=0xe74c3c
-        )
-        embed.add_field(name="👤 المواطن المخالف", value=self.target_member.mention, inline=True)
-        embed.add_field(name="🆔 رقم الهوية المرورية", value=f"`{self.rp_id}`", inline=True)
-        embed.add_field(name="💰 قيمة الغرامة", value=f"**{amount:,} داركي**", inline=True)
-        embed.add_field(name="📝 نوع المخالفة", value=f"`{reason}`", inline=False)
-        embed.add_field(name="👮‍♂️ العسكري المحرر", value=f"{interaction.user.mention} (`{interaction.user.display_name}`)", inline=False)
-        
-        embed.set_image(url=self.proof_url)
-
-        embed.add_field(
-            name="🔴 ملاحظات هامة",
-            value="• جهلك بالقوانين لا يرفع عنك العقوبة.\n"
-                  "• المخالفات وُضعت للحفاظ على سلامتكم من خطر الطريق.\n"
-                  "• ⚠️ **مهلة التسديد هي 7 أيام**، وفي حال عدم التسديد سيتم **إيقاف خدماتك** تلقائياً.\n"
-                  "• في حال محاولة الهروب سيتم تحويلك للسجن مباشرة.",
-            inline=False
-        )
-        embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
-
-        # إرسال المخالفة حصرياً في روم المخالفات مع زر تسديد المخالفة
-        traffic_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
-        if traffic_channel:
-            pay_view = PayFineButton(self.target_member.id, ticket_index)
-            await traffic_channel.send(
-                content=f"📢 إشعار مخالفة موجه للمواطن: {self.target_member.mention}",
-                embed=embed,
-                view=pay_view
-            )
-
-        # إرسال نسخة على الخاص للمواطن
+        active_applicants.add(user_id)
         try:
-            await self.target_member.send(embed=embed)
+            dm = await interaction.user.create_dm()
+            welcome = discord.Embed(
+                title="👋 مرحباً بك في التقديم!",
+                description="الرجاء الإجابة على الأسئلة التالية لتتم مراجعة طلبك.\n\n"
+                            "⚠️ **شروط التقديم:**\n"
+                            "• كل سؤال يجب الرد عليه برسالة منفصلة.\n"
+                            "• السؤال الرابع يتطلب رفع صورة لحسابك.\n"
+                            "• عندك **5 دقائق** للرد على كل سؤال قبل إلغاء الطلب.",
+                color=0x3498db
+            )
+            await dm.send(embed=welcome)
+            
+            await interaction.response.send_message(
+                embed=discord.Embed(title="بدء التقديم", description="تم إرسال الأسئلة لرسائلك الخاصة!", color=0x2ecc71),
+                view=discord.ui.View().add_item(discord.ui.Button(label="الانتقال للخاص", url="https://discord.com/channels/@me", style=discord.ButtonStyle.link)),
+                ephemeral=True
+            )
+            asyncio.create_task(self._collect_answers(interaction, dm))
         except discord.Forbidden:
-            pass
+            active_applicants.discard(user_id)
+            await interaction.response.send_message("❌ رسائلك الخاصة مغلقة.", ephemeral=True)
 
-        await interaction.followup.send(content=f"✅ تم تحرير المخالفة وإرسالها للمواطن {self.target_member.mention} في روم المخالفات بنجاح!", ephemeral=True)
 
-class FineView(discord.ui.View):
-    def __init__(self, target_member: discord.Member, rp_id: str, proof_url: str):
-        super().__init__(timeout=60)
-        self.add_item(FineSelect(target_member, rp_id, proof_url))
+    async def _collect_answers(self, interaction: discord.Interaction, dm: discord.DMChannel):
+        answers = []
+        image_url = None
+        def check(m): return m.author.id == interaction.user.id and isinstance(m.channel, discord.DMChannel)
 
-@bot.tree.command(name="مخالفة", description="تحرير مخالفة مرورية لمواطن (تتطلب إرفاق صورة الدليل)")
-async def make_ticket(interaction: discord.Interaction, target: discord.Member, proof: discord.Attachment):
-    if interaction.channel_id != TICKET_ALLOWED_CHANNEL_ID:
-        allowed_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
-        channel_mention = allowed_channel.mention if allowed_channel else f"<#{TICKET_ALLOWED_CHANNEL_ID}>"
-        return await interaction.response.send_message(
-            f"❌ **عفواً، لا يمكنك استخدام هذا الأمر هنا!**\nيرجى استخدام أمر المخالفات في الروم المخصصة فقط: {channel_mention}",
-            ephemeral=True
-        )
+        try:
+            for idx, q in enumerate(QUESTIONS, start=1):
+                await dm.send(embed=discord.Embed(title=f"❓ السؤال {idx} من أصل {len(QUESTIONS)}", description=f"**{q}**", color=0x3498db))
+                try:
+                    msg = await bot.wait_for("message", check=check, timeout=300)
+                    if idx == 4:
+                        if msg.attachments:
+                            image_url = msg.attachments[0].url
+                            answers.append("[تم إرفاق الصورة]")
+                        else:
+                            await dm.send("❌ تم إلغاء الطلب لعدم إرفاق صورة صحيحة.")
+                            return
+                    else:
+                        answers.append(msg.content.strip())
+                except asyncio.TimeoutError:
+                    await dm.send("⏳ انتهى الوقت وعُلّق الطلب.")
+                    return
 
-    staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
-    if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("❌ هذا الأمر مخصص لرجال الشرطة والإدارة فقط.", ephemeral=True)
+            await dm.send(embed=discord.Embed(title="🔍 جاري المعالجة والمطابقة...", description="يتم الآن معالجة بياناتك، انتظر ثوانٍ...", color=discord.Color.orange()))
+            
+            primary_ok, primary_name = await check_roblox_username(answers[1])
 
-    if not proof.content_type or not proof.content_type.startswith("image/"):
-        return await interaction.response.send_message("❌ يجب إرفاق صورة دليل صالحة (PNG, JPG, WebP) للمخالفة!", ephemeral=True)
+            if not primary_ok:
+                await dm.send(f"❌ لم نتمكن من إيجاد حساب روبلوكس باسم **{answers[1]}**.")
+                await _send_log_async(interaction, answers, "reject", f"الحساب '{answers[1]}' غير موجود في روبلوكس", answers[0], primary_name, None, image_url)
+                return
 
-    users = load_users()
-    user_data = users.get(str(target.id))
-    rp_id = user_data.get("rp_id", "غير مسجل") if user_data else "غير مسجل"
+            result = await evaluate_with_ai(
+                real_name=answers[0],
+                primary=primary_name,
+                age=answers[2],
+                traffic_quiz=answers[4],
+                oath=answers[5]
+            )
+            
+            decision = result.get("decision", "accept")
+            reason = result.get("reason", "تم القبول التلقائي")
 
-    view = FineView(target, rp_id, proof.url)
-    await interaction.response.send_message(
-        content=f"👮‍♂️ جاري تحرير مخالفة للمواطن: {target.mention} (الهوية: `{rp_id}`)\nاختر نوع المخالفة من القائمة لإنهاء الإجراءات:",
-        view=view,
-        ephemeral=True
-    )
+            rp_id = None
+            if decision == "accept":
+                rp_id = await execute_acceptance(interaction.guild, interaction.user.id, answers[0], primary_name)
+                await dm.send(embed=discord.Embed(title="🎉 تم قبولك!", description=f"🆔 هوية الرول بلاي الخاصة بك: `{rp_id}`", color=discord.Color.green()))
+            else:
+                await dm.send(embed=discord.Embed(title="❌ نعتذر، تم رفض طلبك تلقائياً", description=f"**السبب:** {reason}\nالإدارة تراجع طلبك الآن وقد يتم قبولك يدوياً.", color=discord.Color.red()))
 
-# ==================== نظام المراجعة وإيقاف الخدمات ====================
-@tasks.loop(hours=1)
-async def check_overdue_tickets():
-    guild = bot.get_guild(GUILD_ID)
-    if not guild: return
+            await _send_log_async(interaction, answers, decision, reason, answers[0], primary_name, rp_id, image_url)
 
-    overdue_role = guild.get_role(OVERDUE_ROLE_ID)
-    if not overdue_role: return
+        except Exception as e: 
+            logger.error(f"خطأ أثناء المعالجة: {e}")
+        finally: active_applicants.discard(interaction.user.id)
 
-    users = load_users()
-    now = datetime.now()
 
-    for user_id_str, data in users.items():
-        tickets = data.get("tickets", [])
-        has_unpaid_overdue = False
+async def _send_log_async(interaction, answers, decision, reason, real_name, primary, rp_id, image_url):
+    log_channel = bot.get_channel(LOG_CHANNEL_ID)
+    if not log_channel: return
 
-        for ticket in tickets:
-            if not ticket.get("paid", False):
-                issued_at_str = ticket.get("issued_at")
-                if issued_at_str:
-                    issued_at = datetime.fromisoformat(issued_at_str)
-                    if now - issued_at >= timedelta(days=7):
-                        has_unpaid_overdue = True
-                        break
+    color = discord.Color.green() if decision == "accept" else discord.Color.red()
+    embed = discord.Embed(title="📋 طلب رول بلاي جديد", color=color)
+    embed.add_field(name="العضو", value=interaction.user.mention, inline=False)
+    embed.add_field(name="الاسم الحقيقي", value=f"`{real_name}`", inline=True)
+    embed.add_field(name="حساب روبلوكس", value=f"`{primary}`", inline=True)
+    embed.add_field(name="العمر", value=answers[2] if len(answers) > 2 else "غير معروف", inline=True)
+    embed.add_field(name="إجابة سؤال المخالفات", value=answers[4] if len(answers) > 4 else "غير متوفر", inline=False)
+    embed.add_field(name="قرار البوت الحالي", value="✅ قبول تلقائي" if decision == "accept" else "❌ رفض تلقائي", inline=True)
+    embed.add_field(name="السبب", value=reason, inline=True)
+    
+    if rp_id: embed.add_field(name="🆔 رقم الهوية", value=f"`{rp_id}`", inline=True)
+    if image_url: embed.set_image(url=image_url)
+    embed.set_footer(text=f"User ID: {interaction.user.id}")
 
-        if has_unpaid_overdue:
+    if decision == "accept":
+        view = RevokeView(interaction.user.id)
+    else:
+        view = StaffOverrideView(interaction.user.id, real_name, primary)
+
+    await log_channel.send(embed=embed, view=view)
+
+
+class StaffOverrideView(discord.ui.View):
+    def __init__(self, applicant_id: int, real_name: str, primary: str):
+        super().__init__(timeout=None)
+        self.applicant_id = applicant_id
+        self.real_name = real_name
+        self.primary = primary
+
+    @discord.ui.button(label="قبول يدوياً وتوليد هوية", style=discord.ButtonStyle.success, emoji="🟢")
+    async def manual_accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+        if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ ما تملك صلاحية الإدارة.", ephemeral=True)
+
+        await interaction.response.defer()
+        rp_id = await execute_acceptance(interaction.guild, self.applicant_id, self.real_name, self.primary)
+
+        member = interaction.guild.get_member(self.applicant_id)
+        if member:
             try:
-                member = guild.get_member(int(user_id_str))
-                if member and overdue_role not in member.roles:
-                    await member.add_roles(overdue_role)
-                    try:
-                        embed_warn = discord.Embed(
-                            title="⚠️ إشعار إيقاف خدمات",
-                            description="لقد انقضت مهلة الـ 7 أيام لتسديد مخالفاتك المرورية دون تسديدها.\n"
-                                        "تم تطبيق **إيقاف الخدمات** عليك في السيرفر، يرجى التوجه لإدارة المرور لتسوية وضعك وفك الإيقاف.",
-                            color=discord.Color.dark_red()
-                        )
-                        await member.send(embed=embed_warn)
-                    except: pass
-            except Exception as e:
-                logger.error(f"خطأ أثناء منح رتبة إيقاف الخدمات للعضو {user_id_str}: {e}")
+                embed_dm = discord.Embed(title="🎉 تحديث: تم قبولك يدوياً!", description=f"قامت الإدارة بمراجعة طلبك وقبوله يدوياً.\n🆔 **هوية الرول بلاي الخاصة بك:** `{rp_id}`", color=discord.Color.green())
+                await member.send(embed=embed_dm)
+            except: pass
 
-# ==================== الأوامر والأحداث ====================
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_apply(ctx):
-    embed = discord.Embed(
-        title="📝 تقديم طلب رول بلاي",
-        description="اضغط الزر بالأسفل وقم بتعبئة نموذج التقديم.",
-        color=discord.Color.blurple()
-    )
-    channel = bot.get_channel(APPLY_CHANNEL_ID)
-    if channel:
-        await channel.send(embed=embed, view=ApplyView())
-        await ctx.send("✅ تم إرسال رسالة التقديم.")
+        for child in self.children: child.disabled = True
+        original_embed = interaction.message.embeds[0]
+        original_embed.color = discord.Color.green()
+        original_embed.add_field(name="تعديل الإدارة", value=f"🟢 تم القبول يدوياً بواسطة {interaction.user.mention}\n🆔 الهوية الممنوحة: `{rp_id}`", inline=False)
+        await interaction.message.edit(embed=original_embed, view=self)
 
-@bot.event
-async def on_ready():
-    bot.add_view(ApplyView())
-    try:
-        synced = await bot.tree.sync()
-        logger.info(f"✅ تم مزامنة {len(synced)} أمر سلاش بنجاح.")
-    except Exception as e:
-        logger.error(f"خطأ أثناء مزامنة أوامر السلاش: {e}")
+    @discord.ui.button(label="إبقاء الرفض", style=discord.ButtonStyle.secondary, emoji="🔒")
+    async def keep_reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+        if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ ما تملك صلاحية الإدارة.", ephemeral=True)
 
-    if not check_overdue_tickets.is_running():
-        check_overdue_tickets.start()
+        for child in self.children: child.disabled = True
+        original_embed = interaction.message.embeds[0]
+        original_embed.add_field(name="تعديل الإدارة", value=f"🔒 تم تأكيد الرفض وإغلاق الطلب بواسطة {interaction.user.mention}", inline=False)
+        await interaction.message.edit(embed=original_embed, view=self)
 
-    await bot.change_presence(status=discord.Status.online, activity=discord.CustomActivity(name="Distributing"))
-    logger.info(f"✅ البوت شغال بنجاح باسم {bot.user}")
 
-def run_bot():
-    keep_alive()
-    bot.run(TOKEN, log_handler=None)
+class RevokeView(discord.ui.View):
+    def __init__(self, applicant_id: int):
+        super().__init__(timeout=None)
+        self.applicant_id = applicant_id
 
-if __name__ == "__main__": 
-    run_bot()
+    @discord.ui.button(label="إزالة القبول (طرد)", style=discord.ButtonStyle.red, emoji="🚫")
+    async def revoke(self, interaction: discord.Interaction, button: discord.ui.Button):
+        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+        if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("ما تملك صلاحية.", ephemeral=True)
+
+        member = interaction.guild.get_member(self.applicant_id)
+        role = interaction.guild.get_role(ACCEPTED_ROLE_ID)
+        if member and role and role in member.roles:
+            await member.remove_roles(role)
+            try: await member.send("⚠️ تم سحب رتبة الرول بلاي منك بواسطة الإدارة.")
+            except: pass
+
+        users = load_users()
+        if str(self.applicant_id) in users:
+            del users[str(self.applicant_id)]
+            save_users(users)
+
+        button.disabled = True
+        button.label = "تم السحب"
+        await interaction.message.edit(view=self)
+
 
 # ==================== زر تسديد المخالفة ====================
 class PayFineButton(discord.ui.View):
@@ -435,7 +375,7 @@ class PayFineButton(discord.ui.View):
     async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
         officer_role = interaction.guild.get_role(PAYMENT_OFFICER_ROLE_ID)
         if officer_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-            return await interaction.response.send_message("❌ عفواً، هذا الزر مخصص للمسؤولين المصرح لهم بتأكيد التسديد فقط!", ephemeral=True)
+            return await interaction.response.send_message("❌ هذا الزر مخصص للضباط المصرح لهم بتأكيد التسديد فقط!", ephemeral=True)
 
         users = load_users()
         user_key = str(self.target_user_id)
@@ -445,7 +385,7 @@ class PayFineButton(discord.ui.View):
 
         tickets = users[user_key]["tickets"]
         if self.ticket_index >= len(tickets):
-            return await interaction.response.send_message("❌ المخالفة غير موجودة أو تم تسديدها سابقاً!", ephemeral=True)
+            return await interaction.response.send_message("❌ المخالفة مسددة أو غير موجودة!", ephemeral=True)
 
         tickets[self.ticket_index]["paid"] = True
         save_users(users)
@@ -455,8 +395,9 @@ class PayFineButton(discord.ui.View):
         button.style = discord.ButtonStyle.secondary
         await interaction.message.edit(view=self)
 
-        await interaction.response.send_message(f"✅ تم تأكيد تسديد المخالفة للمواطن <@{self.target_user_id}> بواسطة {interaction.user.mention}.", ephemeral=False)
+        await interaction.response.send_message(f"✅ تم تأكيد تسديد المخالفة للمواطن <@{self.target_user_id}> بنجاح بواسطة {interaction.user.mention}.")
 
+        # إزالة إيقاف الخدمات إذا سدد كل مخالفاته
         member = interaction.guild.get_member(self.target_user_id)
         if member:
             has_unpaid = any(not t.get("paid", False) for t in tickets)
@@ -465,7 +406,7 @@ class PayFineButton(discord.ui.View):
                 if overdue_role and overdue_role in member.roles:
                     try:
                         await member.remove_roles(overdue_role)
-                        await interaction.channel.send(f"🟢 **إلغاء إيقاف خدمات:** تم سداد جميع المخالفات بحق المواطن {member.mention} وتم رفع إيقاف الخدمات عنه بنجاح.")
+                        await interaction.channel.send(f"🟢 **تحديث:** تم رفع إيقاف الخدمات عن المواطن {member.mention} لعدم وجود مخالفات قائمة.")
                     except: pass
 
 
@@ -484,163 +425,5 @@ class FineSelect(discord.ui.Select):
             discord.SelectOption(label="عدم الالتزام بالمسار", description="الغرامة: 400 داركي", value="400|عدم الالتزام بالمسار"),
             discord.SelectOption(label="إزعاج بدون سبب (حجز)", description="الغرامة: 700 داركي", value="700|إزعاج بدون سبب (حجز)"),
             discord.SelectOption(label="وقوف وسط الطريق (حجز)", description="الغرامة: 1000 داركي", value="1000|وقوف وسط الطريق (حجز)"),
-            discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 2000 داركي", value="2000|عدم إفساح الطريق لمركبات الطوارئ"),
-            discord.SelectOption(label="تعديل بدون تصريح (حجز/حرمان)", description="الغرامة: 10000 داركي", value="10000|تعديل بدون تصريح (حجز)"),
-            discord.SelectOption(label="تفحيط (حجز)", description="الغرامة: 5000 داركي", value="5000|تفحيط (حجز)"),
-            discord.SelectOption(label="زرة (حجز)", description="الغرامة: 2000 داركي", value="2000|زرة (حجز)"),
-        ]
-
-        super().__init__(placeholder="📋 اختر نوع المخالفة المرورية...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        amount, reason = self.values[0].split("|")
-        amount = int(amount)
-
-        users = load_users()
-        user_key = str(self.target_member.id)
-
-        if user_key not in users:
-            users[user_key] = {
-                "discord_tag": str(self.target_member),
-                "real_name": self.target_member.display_name,
-                "rp_id": self.rp_id,
-                "tickets": [],
-                "permits": []
-            }
-
-        if "tickets" not in users[user_key]:
-            users[user_key]["tickets"] = []
-
-        now_str = datetime.now().isoformat()
-        ticket_data = {
-            "amount": amount,
-            "reason": reason,
-            "issuer": interaction.user.display_name,
-            "issued_at": now_str,
-            "paid": False,
-            "proof_url": self.proof_url
-        }
-        users[user_key]["tickets"].append(ticket_data)
-        save_users(users)
-
-        ticket_index = len(users[user_key]["tickets"]) - 1
-
-        embed = discord.Embed(
-            title="🚔 وزارة الداخلية - إشعار مخالفة مرورية",
-            description=f"تم إدخال مخالفة مرورية جديدة بحق المواطن {self.target_member.mention}.",
-            color=0xe74c3c
-        )
-        embed.add_field(name="👤 المواطن المخالف", value=self.target_member.mention, inline=True)
-        embed.add_field(name="🆔 رقم الهوية المرورية", value=f"`{self.rp_id}`", inline=True)
-        embed.add_field(name="💰 قيمة الغرامة", value=f"**{amount:,} داركي**", inline=True)
-        embed.add_field(name="📝 نوع المخالفة", value=f"`{reason}`", inline=False)
-        embed.add_field(name="👮‍♂️ العسكري المحرر", value=f"{interaction.user.mention} (`{interaction.user.display_name}`)", inline=False)
-        
-        embed.set_image(url=self.proof_url)
-
-        embed.add_field(
-            name="🔴 ملاحظات هامة",
-            value="• جهلك بالقوانين لا يرفع عنك العقوبة.\n"
-                  "• المخالفات وُضعت للحفاظ على سلامتكم من خطر الطريق.\n"
-                  "• ⚠️ **مهلة التسديد هي 7 أيام**، وفي حال عدم التسديد سيتم **إيقاف خدماتك** تلقائياً.\n"
-                  "• في حال محاولة الهروب سيتم تحويلك للسجن مباشرة.",
-            inline=False
-        )
-        embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
-
-        traffic_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
-        if traffic_channel:
-            pay_view = PayFineButton(self.target_member.id, ticket_index)
-            await traffic_channel.send(
-                content=f"📢 إشعار مخالفة موجه للمواطن: {self.target_member.mention}",
-                embed=embed,
-                view=pay_view
-            )
-
-        try:
-            await self.target_member.send(embed=embed)
-        except discord.Forbidden:
-            pass
-
-        await interaction.followup.send(content=f"✅ تم تحرير المخالفة وإرسالها للمواطن {self.target_member.mention} في روم المخالفات بنجاح!", ephemeral=True)
-
-
-class FineView(discord.ui.View):
-    def __init__(self, target_member: discord.Member, rp_id: str, proof_url: str):
-        super().__init__(timeout=60)
-        self.add_item(FineSelect(target_member, rp_id, proof_url))
-
-
-@bot.tree.command(name="مخالفة", description="تحرير مخالفة مرورية لمواطن (تتطلب إرفاق صورة الدليل)")
-async def make_ticket(interaction: discord.Interaction, target: discord.Member, proof: discord.Attachment):
-    if interaction.channel_id != TICKET_ALLOWED_CHANNEL_ID:
-        allowed_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
-        channel_mention = allowed_channel.mention if allowed_channel else f"<#{TICKET_ALLOWED_CHANNEL_ID}>"
-        return await interaction.response.send_message(
-            f"❌ **عفواً، لا يمكنك استخدام هذا الأمر هنا!**\nيرجى استخدام أمر المخالفات في الروم المخصصة فقط: {channel_mention}",
-            ephemeral=True
-        )
-
-    staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
-    if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("❌ هذا الأمر مخصص لرجال الشرطة والإدارة فقط.", ephemeral=True)
-
-    if not proof.content_type or not proof.content_type.startswith("image/"):
-        return await interaction.response.send_message("❌ يجب إرفاق صورة دليل صالحة (PNG, JPG, WebP) للمخالفة!", ephemeral=True)
-
-    users = load_users()
-    user_data = users.get(str(target.id))
-    rp_id = user_data.get("rp_id", "غير مسجل") if user_data else "غير مسجل"
-
-    view = FineView(target, rp_id, proof.url)
-    await interaction.response.send_message(
-        content=f"👮‍♂️ جاري تحرير مخالفة للمواطن: {target.mention} (الهوية: `{rp_id}`)\nاختر نوع المخالفة من القائمة لإنهاء الإجراءات:",
-        view=view,
-        ephemeral=True
-    )
-
-
-# ==================== نظام المراجعة وإيقاف الخدمات ====================
-@tasks.loop(hours=1)
-async def check_overdue_tickets():
-    guild = bot.get_guild(GUILD_ID)
-    if not guild: return
-
-    overdue_role = guild.get_role(OVERDUE_ROLE_ID)
-    if not overdue_role: return
-
-    users = load_users()
-    now = datetime.now()
-
-    for user_id_str, data in users.items():
-        tickets = data.get("tickets", [])
-        has_unpaid_overdue = False
-
-        for ticket in tickets:
-            if not ticket.get("paid", False):
-                issued_at_str = ticket.get("issued_at")
-                if issued_at_str:
-                    issued_at = datetime.fromisoformat(issued_at_str)
-                    if now - issued_at >= timedelta(days=7):
-                        has_unpaid_overdue = True
-                        break
-
-        if has_unpaid_overdue:
-            try:
-                member = guild.get_member(int(user_id_str))
-                if member and overdue_role not in member.roles:
-                    await member.add_roles(overdue_role)
-                    try:
-                        embed_warn = discord.Embed(
-                            title="⚠️ إشعار إيقاف خدمات",
-                            description="لقد انقضت مهلة الـ 7 أيام لتسديد مخالفاتك المرورية دون تسديدها.\n"
-                                        "تم تطبيق **إيقاف الخدمات** عليك في السيرفر، يرجى التوجه لإدارة المرور لتسوية وضعك وفك الإيقاف.",
-                            color=discord.Color.dark_red()
-                        )
-                        await member.send(embed=embed_warn)
-                    except: pass
-            except Exception as e:
-                logger.error(f"خطأ أثناء منح رتبة إيقاف الخدمات للعضو {user_id_str}: {e}")
-
+            discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 200 داركي", value="200|عدم إفساح الطريق لمركبات الطوارئ"),
+            discord.SelectOption(label="تعديل بدون تصريح (حجز/حرمان)",
