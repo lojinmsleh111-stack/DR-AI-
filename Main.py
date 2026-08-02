@@ -353,11 +353,13 @@ class RevokeView(discord.ui.View):
 
 
 # ==================== نظام المخالفات المرورية ====================
+# ==================== نظام المخالفات المرورية المطور ====================
 
 class FineSelect(discord.ui.Select):
-    def __init__(self, target_member: discord.Member, rp_id: str):
+    def __init__(self, target_member: discord.Member, rp_id: str, proof_url: str):
         self.target_member = target_member
         self.rp_id = rp_id
+        self.proof_url = proof_url
 
         options = [
             discord.SelectOption(label="سرعة زائدة", description="الغرامة: 500 داركي", value="500|سرعة زائدة"),
@@ -367,7 +369,7 @@ class FineSelect(discord.ui.Select):
             discord.SelectOption(label="عدم الالتزام بالمسار", description="الغرامة: 400 داركي", value="400|عدم الالتزام بالمسار"),
             discord.SelectOption(label="إزعاج بدون سبب (حجز)", description="الغرامة: 700 داركي", value="700|إزعاج بدون سبب (حجز)"),
             discord.SelectOption(label="وقوف وسط الطريق (حجز)", description="الغرامة: 1000 داركي", value="1000|وقوف وسط الطريق (حجز)"),
-            discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 200 داركي", value="200|عدم إفساح الطريق لمركبات الطوارئ"),
+            discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 2000 داركي", value="200|عدم إفساح الطريق لمركبات الطوارئ"),
             discord.SelectOption(label="تعديل بدون تصريح (حجز/حرمان)", description="الغرامة: 10000 داركي", value="10000|تعديل بدون تصريح (حجز)"),
             discord.SelectOption(label="تفحيط (حجز)", description="الغرامة: 5000 داركي", value="5000|تفحيط (حجز)"),
             discord.SelectOption(label="زرة (حجز)", description="الغرامة: 2000 داركي", value="2000|زرة (حجز)"),
@@ -389,7 +391,8 @@ class FineSelect(discord.ui.Select):
                 "discord_tag": str(self.target_member),
                 "real_name": self.target_member.display_name,
                 "rp_id": self.rp_id,
-                "tickets": []
+                "tickets": [],
+                "permits": []
             }
         
         if "tickets" not in users[user_key]:
@@ -401,52 +404,56 @@ class FineSelect(discord.ui.Select):
             "reason": reason,
             "issuer": interaction.user.display_name,
             "issued_at": now_str,
-            "paid": False
+            "paid": False,
+            "proof_url": self.proof_url
         })
         save_users(users)
 
         embed = discord.Embed(
             title="🚔 وزارة الداخلية - إشعار مخالفة مرورية",
-            description="مخالفة مرورية جديدة صادرة من إدارة المرور والترخيص.",
+            description=f"تم إدخال مخالفة مرورية جديدة بحق المواطن {self.target_member.mention}.",
             color=0xe74c3c
         )
-        embed.add_field(name="👤 المواطن", value=self.target_member.mention, inline=True)
+        embed.add_field(name="👤 المواطن المخالف", value=self.target_member.mention, inline=True)
         embed.add_field(name="🆔 رقم الهوية المرورية", value=f"`{self.rp_id}`", inline=True)
         embed.add_field(name="💰 قيمة الغرامة", value=f"**{amount:,} داركي**", inline=True)
         embed.add_field(name="📝 نوع المخالفة", value=f"`{reason}`", inline=False)
         embed.add_field(name="👮‍♂️ العسكري المحرر", value=f"{interaction.user.mention} (`{interaction.user.display_name}`)", inline=False)
         
+        embed.set_image(url=self.proof_url)
+
         embed.add_field(
             name="🔴 ملاحظات هامة",
             value="• جهلك بالقوانين لا يرفع عنك العقوبة.\n"
                   "• المخالفات وُضعت للحفاظ على سلامتكم من خطر الطريق.\n"
-                  "• ⚠️ **مهلة التسديد هي 7 أيام**، وفي حال عدم التسديد سيتم إعطاؤك رتبة المطلوبين/المتأخرين تلقائياً.\n"
+                  "• ⚠️ **مهلة التسديد هي 7 أيام**، وفي حال عدم التسديد سيتم **إيقاف خدماتك** تلقائياً.\n"
                   "• في حال محاولة الهروب سيتم تحويلك للسجن مباشرة.",
             inline=False
         )
         embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
 
-        traffic_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        # 1️⃣ الإرسال الحصري والمباشر إلى روم المخالفات
+        traffic_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
         if traffic_channel:
-            await traffic_channel.send(embed=embed)
+            await traffic_channel.send(content=f"📢 إشعار مخالفة موجه للمواطن: {self.target_member.mention}", embed=embed)
 
+        # 2️⃣ إرسال إشعار على الخاص للمواطن المخالف
         try:
             await self.target_member.send(embed=embed)
         except discord.Forbidden:
             pass
 
-
-        await interaction.followup.send(content=f"✅ تم تحرير مخالفة `{reason}` للمواطن {self.target_member.mention} بنجاح!", ephemeral=True)
+        await interaction.followup.send(content=f"✅ تم تحرير المخالفة وإرسالها للمواطن {self.target_member.mention} في روم المخالفات وعلى الخاص بنجاح!", ephemeral=True)
 
 
 class FineView(discord.ui.View):
-    def __init__(self, target_member: discord.Member, rp_id: str):
+    def __init__(self, target_member: discord.Member, rp_id: str, proof_url: str):
         super().__init__(timeout=60)
-        self.add_item(FineSelect(target_member, rp_id))
+        self.add_item(FineSelect(target_member, rp_id, proof_url))
 
 
-@bot.tree.command(name="مخالفة", description="تحرير مخالفة مرورية لمواطن (خاص برجال الشرطة)")
-async def make_ticket(interaction: discord.Interaction, target: discord.Member):
+@bot.tree.command(name="مخالفة", description="تحرير مخالفة مرورية لمواطن (تتطلب إرفاق صورة الدليل)")
+async def make_ticket(interaction: discord.Interaction, target: discord.Member, proof: discord.Attachment):
     if interaction.channel_id != TICKET_ALLOWED_CHANNEL_ID:
         allowed_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
         channel_mention = allowed_channel.mention if allowed_channel else f"<#{TICKET_ALLOWED_CHANNEL_ID}>"
@@ -459,18 +466,20 @@ async def make_ticket(interaction: discord.Interaction, target: discord.Member):
     if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("❌ هذا الأمر مخصص لرجال الشرطة والإدارة فقط.", ephemeral=True)
 
+    if not proof.content_type or not proof.content_type.startswith("image/"):
+        return await interaction.response.send_message("❌ يجب إرفاق صورة دليل صالحة (PNG, JPG, WebP) للمخالفة!", ephemeral=True)
+
     users = load_users()
     user_data = users.get(str(target.id))
     rp_id = user_data.get("rp_id", "غير مسجل") if user_data else "غير مسجل"
 
-    view = FineView(target, rp_id)
+    view = FineView(target, rp_id, proof.url)
     await interaction.response.send_message(
-        content=f"👮‍♂️ جاري تحرير مخالفة للمواطن: {target.mention} (الهوية: `{rp_id}`)\nاختر المخالفة من القائمة بالأسفل:",
+        content=f"👮‍♂️ جاري تحرير مخالفة للمواطن: {target.mention} (الهوية: `{rp_id}`)\nاختر نوع المخالفة من القائمة لإنهاء الإجراءات:",
         view=view,
         ephemeral=True
-    )
-
-
+        )
+    
 @tasks.loop(hours=1)
 async def check_overdue_tickets():
     guild = bot.get_guild(GUILD_ID)
