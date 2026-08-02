@@ -430,10 +430,6 @@ class FineSelect(discord.ui.Select):
         if traffic_channel:
             await traffic_channel.send(embed=embed)
 
-                try:
+        try:
             embed_dm = embed.copy()
-            embed_dm.title = "🚨 Notification | إشعار مخالفة مرورية"
-            await self.target_member.send(embed=embed_dm)
-        except discord.Forbidden:
-            pass
-        
+            embed_dm.title = "🚨 Traffic Violation Notic
