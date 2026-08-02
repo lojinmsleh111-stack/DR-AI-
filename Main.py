@@ -439,10 +439,11 @@ class FineSelect(discord.ui.Select):
         await interaction.followup.send(content=f"✅ تم تحرير مخالفة `{reason}` للمواطن {self.target_member.mention} بنجاح!", ephemeral=True)
 
 
-class FineView(discord.ui.View):
+class class FineView(discord.ui.View):
     def __init__(self, target_member: discord.Member, rp_id: str):
         super().__init__(timeout=60)
         self.add_item(FineSelect(target_member, rp_id))
+        
 
 
 @bot.tree.command(name="مخالفة", description="تحرير مخالفة مرورية لمواطن (خاص برجال الشرطة)")
