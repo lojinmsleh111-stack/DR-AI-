@@ -426,16 +426,17 @@ class FineSelect(discord.ui.Select):
         )
         embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
 
-        traffic_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+                traffic_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if traffic_channel:
             await traffic_channel.send(embed=embed)
 
-                try:
+        try:
             await self.target_member.send(embed=embed)
         except discord.Forbidden:
             pass
 
         await interaction.followup.send(content=f"✅ تم تحرير مخالفة `{reason}` للمواطن {self.target_member.mention} بنجاح!", ephemeral=True)
+        
         
 
 
