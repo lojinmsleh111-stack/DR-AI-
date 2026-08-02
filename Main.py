@@ -426,25 +426,21 @@ class FineSelect(discord.ui.Select):
         )
         embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
 
-                traffic_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        traffic_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if traffic_channel:
             await traffic_channel.send(embed=embed)
 
         try:
             await self.target_member.send(embed=embed)
         except discord.Forbidden:
-            pass
-            
-        
 
         await interaction.followup.send(content=f"✅ تم تحرير مخالفة `{reason}` للمواطن {self.target_member.mention} بنجاح!", ephemeral=True)
 
 
-class class FineView(discord.ui.View):
+class FineView(discord.ui.View):
     def __init__(self, target_member: discord.Member, rp_id: str):
         super().__init__(timeout=60)
         self.add_item(FineSelect(target_member, rp_id))
-        
 
 
 @bot.tree.command(name="مخالفة", description="تحرير مخالفة مرورية لمواطن (خاص برجال الشرطة)")
@@ -545,4 +541,5 @@ def run_bot():
     bot.run(TOKEN, log_handler=None)
 
 if __name__ == "__main__": run_bot()
-        
+    
+   
