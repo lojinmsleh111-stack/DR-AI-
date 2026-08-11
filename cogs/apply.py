@@ -4,10 +4,9 @@ import logging
 
 logger = logging.getLogger("bot")
 
-# آيديات الرومات والرولات
-APPLY_CHANNEL_ID = 1532414607577055465   # روم إرسال بنر التقديم
 REVIEW_CHANNEL_ID = 1532414607577055465  # روم مراجعة الطلبات للإدارة
 PASSED_ROLE_ID = 1524373417137016833     # رول القبول / المواطن
+ALLOWED_SETUP_ROLE_ID = 1532414187685413055  # الرتبة المسموح لها بإرسال البنر
 
 
 class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول بلاي"):
@@ -18,8 +17,8 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
         max_length=100
     )
     q2 = discord.ui.TextInput(
-        label="عمرك الحقيقي",
-        placeholder="الرجاء عدم الكذب و وضع عمرك الحقيقي",
+        label="عمر الشخصية",
+        placeholder="مثال: 20",
         required=True,
         max_length=10
     )
@@ -49,7 +48,7 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
         review_channel = interaction.guild.get_channel(REVIEW_CHANNEL_ID)
         if review_channel:
             embed = discord.Embed(
-                title="🎩 تقديم تصريح رول بلاي ",
+                title="📑 طلب تصريح رول بلاي جديد",
                 description=f"قدم المواطن {interaction.user.mention} طلب للحصول على التصريح.",
                 color=discord.Color.gold()
             )
@@ -74,7 +73,8 @@ class RPReviewButtons(discord.ui.View):
 
     @discord.ui.button(label="✅ قبول الطلب", style=discord.ButtonStyle.success)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.administrator:
+        target_role = interaction.guild.get_role(ALLOWED_SETUP_ROLE_ID)
+        if target_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             return await interaction.response.send_message("❌ لا تملك صلاحية قبول الطلبات.", ephemeral=True)
 
         member = interaction.guild.get_member(self.applicant_id)
@@ -93,7 +93,7 @@ class RPReviewButtons(discord.ui.View):
                 pass
 
             try:
-                await member.send(f"🕹️ **مبروك!** تم قبول طلب تصريح الرول بلاي الخاص بك بنجاح.")
+                await member.send(f"🎉 **مبروك!** تم قبول طلب تصريح الرول بلاي الخاص بك بنجاح.")
             except Exception:
                 pass
 
@@ -106,7 +106,8 @@ class RPReviewButtons(discord.ui.View):
 
     @discord.ui.button(label="❌ رفض الطلب", style=discord.ButtonStyle.danger)
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.administrator:
+        target_role = interaction.guild.get_role(ALLOWED_SETUP_ROLE_ID)
+        if target_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             return await interaction.response.send_message("❌ لا تملك صلاحية رفض الطلبات.", ephemeral=True)
 
         member = interaction.guild.get_member(self.applicant_id)
@@ -127,7 +128,7 @@ class ApplyStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="👾 تقديم تصريح رول بلاي", style=discord.ButtonStyle.primary, custom_id="start_rp_apply")
+    @discord.ui.button(label="📝 تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.primary, custom_id="start_rp_apply")
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ApplyModal())
 
@@ -136,9 +137,12 @@ class ApplyCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @discord.app_commands.command(name="setup_apply", description="إرسال بنر تقديم تصريح الرول بلاي")
-    @commands.has_permissions(administrator=True)
-    async def setup_apply(self, interaction: discord.Interaction):
+    @commands.command(name="setup_apply")
+    async def setup_apply(self, ctx):
+        required_role = ctx.guild.get_role(ALLOWED_SETUP_ROLE_ID)
+        if required_role not in ctx.author.roles and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("❌ عفواً، هذا الأمر مخصص لرتبة معينة فقط!")
+
         embed = discord.Embed(
             title="🎮 طلب تصريح دخول الرول بلاي",
             description="أهلاً بك في السيرفر!\n\nللحصول على تصريح الرول بلاي، اضغط على الزر بالأسفل وقم بتعبئة البيانات المطلوبة.",
@@ -146,13 +150,12 @@ class ApplyCog(commands.Cog):
         )
         embed.set_footer(text="إدارة سيرفر الرول بلاي 📗")
 
-        channel = interaction.guild.get_channel(APPLY_CHANNEL_ID)
-        if channel:
-            await channel.send(embed=embed, view=ApplyStartView())
-            await interaction.response.send_message("✅ تم إرسال رسالة التقديم بنجاح.", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ لم يتم العثور على الروم المخصصة للتقديم!", ephemeral=True)
+        await ctx.send(embed=embed, view=ApplyStartView())
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
 
 async def setup(bot):
     await bot.add_cog(ApplyCog(bot))
-              
+    
