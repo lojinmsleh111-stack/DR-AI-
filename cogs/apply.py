@@ -131,11 +131,11 @@ class RPReviewButtons(discord.ui.View):
 
 
 class ApplyStartView(discord.ui.View):
+class ApplyStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-        @discord.ui.button(label="تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.blurple, emoji="👾", custom_id="persistent_rp_apply_button_v2")
-
+    @discord.ui.button(label="تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.blurple, emoji="👾", custom_id="persistent_rp_apply_button_v2")
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             await interaction.response.send_modal(ApplyModal())
@@ -149,6 +149,26 @@ class ApplyCog(commands.Cog):
 
     @commands.command(name="setup_apply")
     async def setup_apply(self, ctx):
+        required_role = ctx.guild.get_role(ALLOWED_SETUP_ROLE_ID)
+        if required_role not in ctx.author.roles and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("❌ عفواً، هذا الأمر مخصص لرتبة معينة فقط!")
+
+        embed = discord.Embed(
+            title="🎮 طلب تصريح دخول الرول بلاي",
+            description="أهلاً بك في السيرفر!\n\nل للحصول على تصريح الرول بلاي، اضغط على الزر بالأسفل وقم بتعبئة البيانات المطلوبة.",
+            color=discord.Color.blurple()
+        )
+        embed.set_footer(text="إدارة سيرفر الرول بلاي 📗")
+
+        await ctx.send(embed=embed, view=ApplyStartView())
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+async def setup(bot):
+    await bot.add_cog(ApplyCog(bot))
+    
         required_role = ctx.guild.get_role(ALLOWED_SETUP_ROLE_ID)
         if required_role not in ctx.author.roles and not ctx.author.guild_permissions.administrator:
             return await ctx.send("❌ عفواً، هذا الأمر مخصص لرتبة معينة فقط!")
