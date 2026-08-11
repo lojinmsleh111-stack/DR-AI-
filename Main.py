@@ -610,6 +610,11 @@ async def on_ready():
     await bot.change_presence(status=discord.Status.online, activity=discord.CustomActivity(name="Distributing"))
     logger.info(f"✅ البوت شغال بنجاح باسم {bot.user}")
 
+@bot.event
+async def on_ready():
+    await bot.load_extension("cogs.streak")
+    print(f"تم تسجيل الدخول بنجاح وتحميل نظام الستريك!")
+
 
 def run_bot():
     try:
@@ -626,8 +631,3 @@ def run_bot():
 if __name__ == "__main__": 
     run_bot()
 
-@bot.event
-async def on_ready():
-    await bot.load_extension("cogs.streak")
-    print(f"تم تسجيل الدخول بنجاح وتحميل نظام الستريك!")
-    
