@@ -134,7 +134,8 @@ class ApplyStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🕹️ تقديم تصريح رول بلاي ", style=discord.ButtonStyle.primary, custom_id="persistent_rp_apply_button_v2")
+        @discord.ui.button(label="تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.blurple, emoji="👾", custom_id="persistent_rp_apply_button_v2")
+
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             await interaction.response.send_modal(ApplyModal())
