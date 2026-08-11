@@ -10,30 +10,10 @@ ALLOWED_SETUP_ROLE_ID = 1532414187685413055
 
 
 class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول بلاي"):
-    q1 = discord.ui.TextInput(
-        label="الاسم الكريم:",
-        placeholder="أدخل اسمك...",
-        required=True,
-        max_length=100
-    )
-    q2 = discord.ui.TextInput(
-        label="عمرك الحقيقي:",
-        placeholder="الرجاء وضع عمرك الحقيقي...",
-        required=True,
-        max_length=10
-    )
-    q3 = discord.ui.TextInput(
-        label="اسم حسابك الأساسي في روبلوكس:",
-        placeholder="Username...",
-        required=True,
-        max_length=100
-    )
-    q4 = discord.ui.TextInput(
-        label="اختصار الحساب:",
-        placeholder="Display Name / اليوزر...",
-        required=True,
-        max_length=100
-    )
+    q1 = discord.ui.TextInput(label="الاسم الكريم:", placeholder="أدخل اسمك...", required=True, max_length=100)
+    q2 = discord.ui.TextInput(label="عمرك الحقيقي:", placeholder="الرجاء وضع عمرك الحقيقي...", required=True, max_length=10)
+    q3 = discord.ui.TextInput(label="اسم حسابك الأساسي في روبلوكس:", placeholder="Username...", required=True, max_length=100)
+    q4 = discord.ui.TextInput(label="اختصار الحساب:", placeholder="Display Name / اليوزر...", required=True, max_length=100)
     q5 = discord.ui.TextInput(
         label="قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء:",
         style=discord.TextStyle.paragraph,
@@ -43,7 +23,6 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # الرد الفوري المباشر لتسجيل نجاح الإرسال وتجنب أي مهلة
         await interaction.response.send_message("✅ تم إرسال طلبك بنجاح! سيتم مراجعته من قبل إدارة الرول بلاي.", ephemeral=True)
 
         review_channel = interaction.guild.get_channel(REVIEW_CHANNEL_ID)
@@ -59,8 +38,7 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
             embed.add_field(name="2️⃣ عمرك الحقيقي:", value=self.q2.value, inline=True)
             embed.add_field(name="3️⃣ اسم حسابك الأساسي في روبلوكس:", value=f"`{self.q3.value}`", inline=True)
             embed.add_field(name="4️⃣ اختصار الحساب:", value=f"`{self.q4.value}`", inline=True)
-            embed.add_field(name="5️⃣ قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء:", value=self.q5.value, inline=False)
-            embed.set_footer(text="استخدم الأزرار بالأسفل قبول أو رفض الطلب")
+            embed.add_field(name="5️⃣ القسم:", value=self.q5.value, inline=False)
 
             view = RPReviewButtons(applicant_id=interaction.user.id, char_name=self.q1.value)
             await review_channel.send(embed=embed, view=view)
@@ -83,27 +61,16 @@ class RPReviewButtons(discord.ui.View):
 
         if member:
             if role:
-                try:
-                    await member.add_roles(role)
-                except Exception as e:
-                    logger.error(f"خطأ أثناء منح الرول: {e}")
-            
-            try:
-                await member.edit(nick=self.char_name)
-            except Exception:
-                pass
+                try: await member.add_roles(role)
+                except Exception: pass
+            try: await member.edit(nick=self.char_name)
+            except Exception: pass
+            try: await member.send("🎉 **مبروك!** تم قبول طلب تصريح الرول بلاي الخاص بك بنجاح.")
+            except Exception: pass
 
-            try:
-                await member.send("🎉 **مبروك!** تم قبول طلب تصريح الرول بلاي الخاص بك بنجاح.")
-            except Exception:
-                pass
-
-        for child in self.children:
-            child.disabled = True
+        for child in self.children: child.disabled = True
         button.label = f"✅ مقبول بواسطة {interaction.user.display_name}"
-        
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send(f"🟢 تم قبول طلب <@{self.applicant_id}> بنجاح!")
 
     @discord.ui.button(label="❌ رفض الطلب", style=discord.ButtonStyle.danger)
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -113,17 +80,12 @@ class RPReviewButtons(discord.ui.View):
 
         member = interaction.guild.get_member(self.applicant_id)
         if member:
-            try:
-                await member.send("❌ نأسف لإبلاغك بأنه تم رفض طلب تصريح الرول بلاي الخاص بك.")
-            except Exception:
-                pass
+            try: await member.send("❌ نأسف لإبلاغك بأنه تم رفض طلب تصريح الرول بلاي الخاص بك.")
+            except Exception: pass
 
-        for child in self.children:
-            child.disabled = True
+        for child in self.children: child.disabled = True
         button.label = f"❌ مرفوض بواسطة {interaction.user.display_name}"
-
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send(f"🔴 تم رفض طلب <@{self.applicant_id}>.")
 
 
 class ApplyStartView(discord.ui.View):
@@ -134,10 +96,9 @@ class ApplyStartView(discord.ui.View):
         label="تقديم طلب تصريح رول بلاي", 
         style=discord.ButtonStyle.blurple, 
         emoji="👾", 
-        custom_id="persistent_rp_apply_button_v7"
+        custom_id="replit_apply_btn_final"
     )
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # فتح الـ Modal مباشرة وبدون أي منطق برمجي معقد يسبب تأخير
         await interaction.response.send_modal(ApplyModal())
 
 
@@ -159,12 +120,10 @@ class ApplyCog(commands.Cog):
         embed.set_footer(text="إدارة سيرفر الرول بلاي 📗")
 
         await ctx.send(embed=embed, view=ApplyStartView())
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
+        try: await ctx.message.delete()
+        except Exception: pass
 
 
 async def setup(bot):
     await bot.add_cog(ApplyCog(bot))
-    
+        
