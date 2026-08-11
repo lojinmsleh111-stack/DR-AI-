@@ -133,7 +133,7 @@ class ApplyStartView(discord.ui.View):
         label="تقديم طلب تصريح رول بلاي", 
         style=discord.ButtonStyle.blurple, 
         emoji="👾", 
-        custom_id="persistent_rp_apply_button_v3"
+        custom_id="persistent_rp_apply_button_v4"
     )
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ApplyModal())
