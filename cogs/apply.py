@@ -6,24 +6,24 @@ logger = logging.getLogger("bot")
 
 REVIEW_CHANNEL_ID = 1532414607577055465  # روم مراجعة الطلبات للإدارة
 PASSED_ROLE_ID = 1524373417137016833     # رول القبول / المواطن
-ALLOWED_SETUP_ROLE_ID = 1532414187685413055  # الرتبة المسموح لها بإرسال البنر
+ALLOWED_SETUP_ROLE_ID = 1532414187685413055  # الرتبة المسموح لها
 
 
 class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول بلاي"):
     q1 = discord.ui.TextInput(
-        label=": الاسم الكريم",
+        label=":الاسم الكريم",
         placeholder="أدخل اسمك...",
         required=True,
         max_length=100
     )
     q2 = discord.ui.TextInput(
         label="عمرك الحقيقي :",
-        placeholder="الرجاء وضع عمرك الحقيقي",
+        placeholder="الرجاء وضع عمرك الحقيقي ",
         required=True,
         max_length=10
     )
     q3 = discord.ui.TextInput(
-        label=": اسم حسابك الأساسي في روبلوكس",
+        label=":اسم حسابك الأساسي في روبلوكس",
         placeholder="Username...",
         required=True,
         max_length=100
@@ -35,7 +35,7 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
         max_length=100
     )
     q5 = discord.ui.TextInput(
-        label=": قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء",
+        label=": قسم التعهد بالالتزام بقوانين السيرفر والاحترام",
         style=discord.TextStyle.paragraph,
         placeholder="اكتب القسم هنا...",
         required=True,
@@ -43,19 +43,20 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # الاستجابة الفورية لتجنب انتهاء المهلة
         await interaction.response.send_message("✅ تم إرسال طلبك بنجاح! سيتم مراجعته من قبل إدارة الرول بلاي.", ephemeral=True)
 
         review_channel = interaction.guild.get_channel(REVIEW_CHANNEL_ID)
         if review_channel:
             embed = discord.Embed(
-                title="📑 طلب تصريح رول بلاي جديد",
+                title="تقديم تصريح رول بلاي 👾",
                 description=f"قدم المواطن {interaction.user.mention} طلب للحصول على التصريح.",
                 color=discord.Color.gold()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
             embed.add_field(name="👤 العضو", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
             embed.add_field(name="1️⃣ الاسم الكريم", value=self.q1.value, inline=False)
-            embed.add_field(name="2️⃣ عمر الشخصية", value=self.q2.value, inline=True)
+            embed.add_field(name="2️⃣ عمرك الحقيقي", value=self.q2.value, inline=True)
             embed.add_field(name="3️⃣ اسم حسابك الأساسي في روبلوكس", value=f"`{self.q3.value}`", inline=True)
             embed.add_field(name="4️⃣ اختصار الحساب", value=f"`{self.q4.value}`", inline=True)
             embed.add_field(name="5️⃣ قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء", value=self.q5.value, inline=False)
@@ -63,6 +64,11 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
 
             view = RPReviewButtons(applicant_id=interaction.user.id, char_name=self.q1.value)
             await review_channel.send(embed=embed, view=view)
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        logger.error(f"خطأ في استمارة التقديم: {error}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message("❌ حدث خطأ أثناء معالجة طلبك، يرجى المحاولة مرة أخرى.", ephemeral=True)
 
 
 class RPReviewButtons(discord.ui.View):
@@ -128,9 +134,12 @@ class ApplyStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📝 تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.primary, custom_id="persistent_rp_apply_button")
+    @discord.ui.button(label="🕹️ تقديم تصريح رول بلاي ", style=discord.ButtonStyle.primary, custom_id="persistent_rp_apply_button_v2")
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ApplyModal())
+        try:
+            await interaction.response.send_modal(ApplyModal())
+        except Exception as e:
+            logger.error(f"خطأ أثناء فتح استمارة التقديم: {e}")
 
 
 class ApplyCog(commands.Cog):
@@ -157,7 +166,5 @@ class ApplyCog(commands.Cog):
             pass
 
 async def setup(bot):
-    cog = ApplyCog(bot)
-    bot.add_view(ApplyStartView())  # تسجيل الـ View بشكل دائم
-    await bot.add_cog(cog)
+    await bot.add_cog(ApplyCog(bot))
     
