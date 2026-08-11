@@ -625,4 +625,9 @@ def run_bot():
 
 if __name__ == "__main__": 
     run_bot()
+
+@bot.event
+async def on_ready():
+    await bot.load_extension("cogs.streak")
+    print(f"تم تسجيل الدخول بنجاح وتحميل نظام الستريك!")
     
