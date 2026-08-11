@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 from keep_alive import keep_alive
 
 # ================= الإعدادات والمتغيرات =================
-# قراءة التوكن بأي اسم كان في البيئة تجنباً للمشاكل
 TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("DISCORD_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
@@ -25,10 +24,7 @@ ACCEPTED_ROLE_ID = 1532414257772101812
 UNACCEPTED_ROLE_ID = 1532414262343897319 
 OVERDUE_ROLE_ID = 1533068412547497984
 
-# رتبة المسؤول المصرح له بضغط زر التسديد
 PAYMENT_OFFICER_ROLE_ID = 1532414219843276820
-
-# 🆔 آيدي الروم المخصصة لأمر المخالفات والتصاريح:
 TICKET_ALLOWED_CHANNEL_ID = 1532414607577055465
 
 USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
@@ -46,7 +42,6 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# تهيئة عميل Groq للذكاء الاصطناعي
 groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 active_applicants: set[int] = set()
@@ -82,12 +77,16 @@ def load_users() -> dict:
         try:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception: pass
+        except Exception as e:
+            logger.error(f"خطأ في قراءة ملف المستخدمين: {e}")
     return {}
 
 def save_users(data: dict):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"خطأ في حفظ ملف المستخدمين: {e}")
 
 def generate_unique_id() -> str:
     users = load_users()
@@ -99,7 +98,7 @@ def generate_unique_id() -> str:
 
 
 async def check_roblox_username(username: str) -> tuple[bool, str]:
-    url = "https://users.roblox.com/v1/usernames/users"
+    url = "[https://users.roblox.com/v1/usernames/users](https://users.roblox.com/v1/usernames/users)"
     payload = {"usernames": [username.strip()], "excludeBannedUsers": False}
     try:
         async with aiohttp.ClientSession() as session:
@@ -110,13 +109,14 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
                     if results:
                         return True, results[0].get("name", username)
                     return False, username
-    except Exception: pass
+    except Exception as e:
+        logger.error(f"خطأ التحقق من روبلوكس: {e}")
     return False, username
 
 
 async def evaluate_with_ai(real_name: str, primary: str, age: str, traffic_quiz: str, oath: str) -> dict:
     if not groq_client:
-        return {"decision": "accept", "reason": "تم القبول التلقائي"}
+        return {"decision": "accept", "reason": "تم القبول التلقائي (الذكاء الاصطناعي غير مفعل)"}
 
     text_content = (
         f"الاسم الحقيقي للمتقدم: {real_name}\n"
@@ -136,6 +136,9 @@ async def evaluate_with_ai(real_name: str, primary: str, age: str, traffic_quiz:
         )
         
         raw_text = response.choices[0].message.content.strip()
+        # تنظيف كود markdown إذا أرجعه النموذج
+        raw_text = re.sub(r'```json\s*|\s*```', '', raw_text)
+        
         match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if match:
             return json.loads(match.group(0))
@@ -152,17 +155,16 @@ async def execute_acceptance(guild: discord.Guild, user_id: int, real_name: str,
     role = guild.get_role(ACCEPTED_ROLE_ID)
     if role and member:
         try: await member.add_roles(role)
-        except: pass
+        except Exception: pass
 
     unaccepted_role = guild.get_role(UNACCEPTED_ROLE_ID)
     if unaccepted_role and member:
         try: await member.remove_roles(unaccepted_role)
-        except: pass
+        except Exception: pass
 
-    # التسمية الجديدة المعتمدة DR
     if member:
         try: await member.edit(nick=f"DR | {primary_name} | {rp_id}")
-        except: pass
+        except Exception: pass
 
     users = load_users()
     users[str(user_id)] = {
@@ -170,8 +172,8 @@ async def execute_acceptance(guild: discord.Guild, user_id: int, real_name: str,
         "real_name": real_name,
         "roblox_primary": primary_name,
         "rp_id": rp_id,
-        "tickets": [],
-        "permits": []
+        "tickets": users.get(str(user_id), {}).get("tickets", []),
+        "permits": users.get(str(user_id), {}).get("permits", [])
     }
     save_users(users)
     return rp_id
@@ -203,7 +205,7 @@ class ApplyView(discord.ui.View):
             
             await interaction.response.send_message(
                 embed=discord.Embed(title="بدء التقديم", description="تم إرسال الأسئلة لرسائلك الخاصة!", color=0x2ecc71),
-                view=discord.ui.View().add_item(discord.ui.Button(label="الانتقال للخاص", url="https://discord.com/channels/@me", style=discord.ButtonStyle.link)),
+                view=discord.ui.View().add_item(discord.ui.Button(label="الانتقال للخاص", url="[https://discord.com/channels/@me](https://discord.com/channels/@me)", style=discord.ButtonStyle.link)),
                 ephemeral=True
             )
             asyncio.create_task(self._collect_answers(interaction, dm))
@@ -266,7 +268,8 @@ class ApplyView(discord.ui.View):
 
         except Exception as e: 
             logger.error(f"خطأ أثناء المعالجة: {e}")
-        finally: active_applicants.discard(interaction.user.id)
+        finally: 
+            active_applicants.discard(interaction.user.id)
 
 
 async def _send_log_async(interaction, answers, decision, reason, real_name, primary, rp_id, image_url):
@@ -308,7 +311,6 @@ class StaffOverrideView(discord.ui.View):
         if staff_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             return await interaction.response.send_message("❌ ما تملك صلاحية الإدارة.", ephemeral=True)
 
-        await interaction.response.defer()
         rp_id = await execute_acceptance(interaction.guild, self.applicant_id, self.real_name, self.primary)
 
         member = interaction.guild.get_member(self.applicant_id)
@@ -316,13 +318,13 @@ class StaffOverrideView(discord.ui.View):
             try:
                 embed_dm = discord.Embed(title="🎉 تحديث: تم قبولك يدوياً!", description=f"قامت الإدارة بمراجعة طلبك وقبوله يدوياً.\n🆔 **هوية الرول بلاي الخاصة بك:** `{rp_id}`", color=discord.Color.green())
                 await member.send(embed=embed_dm)
-            except: pass
+            except Exception: pass
 
         for child in self.children: child.disabled = True
         original_embed = interaction.message.embeds[0]
         original_embed.color = discord.Color.green()
         original_embed.add_field(name="تعديل الإدارة", value=f"🟢 تم القبول يدوياً بواسطة {interaction.user.mention}\n🆔 الهوية الممنوحة: `{rp_id}`", inline=False)
-        await interaction.message.edit(embed=original_embed, view=self)
+        await interaction.response.edit_message(embed=original_embed, view=self)
 
     @discord.ui.button(label="إبقاء الرفض", style=discord.ButtonStyle.secondary, emoji="🔒")
     async def keep_reject(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -333,7 +335,7 @@ class StaffOverrideView(discord.ui.View):
         for child in self.children: child.disabled = True
         original_embed = interaction.message.embeds[0]
         original_embed.add_field(name="تعديل الإدارة", value=f"🔒 تم تأكيد الرفض وإغلاق الطلب بواسطة {interaction.user.mention}", inline=False)
-        await interaction.message.edit(embed=original_embed, view=self)
+        await interaction.response.edit_message(embed=original_embed, view=self)
 
 
 class RevokeView(discord.ui.View):
@@ -352,7 +354,7 @@ class RevokeView(discord.ui.View):
         if member and role and role in member.roles:
             await member.remove_roles(role)
             try: await member.send("⚠️ تم سحب رتبة الرول بلاي منك بواسطة الإدارة.")
-            except: pass
+            except Exception: pass
 
         users = load_users()
         if str(self.applicant_id) in users:
@@ -361,7 +363,7 @@ class RevokeView(discord.ui.View):
 
         button.disabled = True
         button.label = "تم السحب"
-        await interaction.message.edit(view=self)
+        await interaction.response.edit_message(view=self)
 
 
 # ==================== زر تسديد المخالفة ====================
@@ -371,7 +373,7 @@ class PayFineButton(discord.ui.View):
         self.target_user_id = target_user_id
         self.ticket_index = ticket_index
 
-    @discord.ui.button(label="💳 تم تسديد المخالفة", style=discord.ButtonStyle.success, custom_id="pay_fine_btn")
+    @discord.ui.button(label="💳 تم تسديد المخالفة", style=discord.ButtonStyle.success)
     async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
         officer_role = interaction.guild.get_role(PAYMENT_OFFICER_ROLE_ID)
         if officer_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
@@ -393,11 +395,10 @@ class PayFineButton(discord.ui.View):
         button.disabled = True
         button.label = f"✅ تم التسديد بواسطة {interaction.user.display_name}"
         button.style = discord.ButtonStyle.secondary
-        await interaction.message.edit(view=self)
+        await interaction.response.edit_message(view=self)
 
-        await interaction.response.send_message(f"✅ تم تأكيد تسديد المخالفة للمواطن <@{self.target_user_id}> بنجاح بواسطة {interaction.user.mention}.")
+        await interaction.followup.send(f"✅ تم تأكيد تسديد المخالفة للمواطن <@{self.target_user_id}> بنجاح بواسطة {interaction.user.mention}.")
 
-        # إزالة إيقاف الخدمات إذا سدد كل مخالفاته
         member = interaction.guild.get_member(self.target_user_id)
         if member:
             has_unpaid = any(not t.get("paid", False) for t in tickets)
@@ -407,7 +408,7 @@ class PayFineButton(discord.ui.View):
                     try:
                         await member.remove_roles(overdue_role)
                         await interaction.channel.send(f"🟢 **تحديث:** تم رفع إيقاف الخدمات عن المواطن {member.mention} لعدم وجود مخالفات قائمة.")
-                    except: pass
+                    except Exception: pass
 
 
 # ==================== نظام المخالفات المرورية ====================
@@ -424,7 +425,7 @@ class FineSelect(discord.ui.Select):
             discord.SelectOption(label="عدم إضاءة النور أثناء الليل", description="الغرامة: 300 داركي", value="300|عدم إضاءة النور أثناء الليل"),
             discord.SelectOption(label="عدم الالتزام بالمسار", description="الغرامة: 400 داركي", value="400|عدم الالتزام بالمسار"),
             discord.SelectOption(label="إزعاج بدون سبب (حجز)", description="الغرامة: 700 داركي", value="700|إزعاج بدون سبب (حجز)"),
-            discord.SelectOption(label="وقوف وسط الطريق (حجز)", description="الغرامة: 1000 داركي", value="1000|وقوف وسط الطريق (حجز)"),
+                        discord.SelectOption(label="وقوف وسط الطريق (حجز)", description="الغرامة: 1000 داركي", value="1000|وقوف وسط الطريق (حجز)"),
             discord.SelectOption(label="عدم إفساح الطريق لمركبات الطوارئ", description="الغرامة: 200 داركي", value="200|عدم إفساح الطريق لمركبات الطوارئ"),
             discord.SelectOption(label="تعديل بدون تصريح (حجز/حرمان)", description="الغرامة: 10000 داركي", value="10000|تعديل بدون تصريح (حجز)"),
             discord.SelectOption(label="تفحيط (حجز)", description="الغرامة: 5000 داركي", value="5000|تفحيط (حجز)"),
@@ -490,7 +491,6 @@ class FineSelect(discord.ui.Select):
         )
         embed.set_footer(text="وزارة الداخلية تتمنى لكم قيادة آمنة وسعيدة 📗")
 
-        # إرسال المخالفة في روم المخالفات مع زر تسديد المخالفة
         traffic_channel = interaction.guild.get_channel(TICKET_ALLOWED_CHANNEL_ID)
         if traffic_channel:
             pay_view = PayFineButton(self.target_member.id, ticket_index)
@@ -500,7 +500,6 @@ class FineSelect(discord.ui.Select):
                 view=pay_view
             )
 
-        # الخاص
         try: await self.target_member.send(embed=embed)
         except discord.Forbidden: pass
 
@@ -580,7 +579,7 @@ async def check_overdue_tickets():
                             color=discord.Color.dark_red()
                         )
                         await member.send(embed=embed_warn)
-                    except: pass
+                    except Exception: pass
             except Exception as e:
                 logger.error(f"خطأ أثناء منح رتبة إيقاف الخدمات: {e}")
 
@@ -595,9 +594,17 @@ async def setup_apply(ctx):
         await ctx.send("✅ تم إرسال رسالة التقديم.")
 
 
+# ==================== حدث التشغيل المدمج والمتكامل ====================
 @bot.event
 async def on_ready():
     bot.add_view(ApplyView())
+    
+    try:
+        await bot.load_extension("cogs.streak")
+        logger.info("تم تحميل نظام الستريك cogs.streak بنجاح.")
+    except Exception as e:
+        logger.warning(f"لم يتم تحميل cogs.streak: {e}")
+
     try:
         synced = await bot.tree.sync()
         logger.info(f"✅ تم مزامنة {len(synced)} أمر سلاش بنجاح.")
@@ -609,11 +616,6 @@ async def on_ready():
 
     await bot.change_presence(status=discord.Status.online, activity=discord.CustomActivity(name="Distributing"))
     logger.info(f"✅ البوت شغال بنجاح باسم {bot.user}")
-
-@bot.event
-async def on_ready():
-    await bot.load_extension("cogs.streak")
-    print(f"تم تسجيل الدخول بنجاح وتحميل نظام الستريك!")
 
 
 def run_bot():
@@ -630,4 +632,4 @@ def run_bot():
 
 if __name__ == "__main__": 
     run_bot()
-
+                        
