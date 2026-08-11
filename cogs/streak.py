@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timedelta
 
 DATA_FILE = "streaks.json"
-STREAK_CHANNEL_ID = 123456789012345678  # 👈 استبدله بـ ID روم الستريك
+STREAK_CHANNEL_ID = 1536027164544077825  # 👈 استبدله بـ ID روم الستريك
 FORBIDDEN_EMOJIS = ["🖕", "🍑", "🍆", "🖕🏻", "🖕🏼", "🖕🏽", "🖕🏾", "🖕🏿"]
 
 def load_data():
