@@ -11,31 +11,31 @@ ALLOWED_SETUP_ROLE_ID = 1532414187685413055  # الرتبة المسموح له�
 
 class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول بلاي"):
     q1 = discord.ui.TextInput(
-        label="الاسم الكريم",
+        label=": الاسم الكريم",
         placeholder="أدخل اسمك...",
         required=True,
         max_length=100
     )
     q2 = discord.ui.TextInput(
-        label="عمر الشخصية",
-        placeholder="مثال: 20",
+        label="عمرك الحقيقي :",
+        placeholder="الرجاء وضع عمرك الحقيقي",
         required=True,
         max_length=10
     )
     q3 = discord.ui.TextInput(
-        label="اسم حسابك الأساسي في روبلوكس",
+        label=": اسم حسابك الأساسي في روبلوكس",
         placeholder="Username...",
         required=True,
         max_length=100
     )
     q4 = discord.ui.TextInput(
-        label="اختصار الحساب",
+        label=": اختصار الحساب",
         placeholder="Display Name / اليوزر...",
         required=True,
         max_length=100
     )
     q5 = discord.ui.TextInput(
-        label="قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء",
+        label=": قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء",
         style=discord.TextStyle.paragraph,
         placeholder="اكتب القسم هنا...",
         required=True,
