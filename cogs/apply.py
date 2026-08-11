@@ -43,6 +43,7 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # الرد الفوري المباشر لتسجيل نجاح الإرسال وتجنب أي مهلة
         await interaction.response.send_message("✅ تم إرسال طلبك بنجاح! سيتم مراجعته من قبل إدارة الرول بلاي.", ephemeral=True)
 
         review_channel = interaction.guild.get_channel(REVIEW_CHANNEL_ID)
@@ -133,9 +134,10 @@ class ApplyStartView(discord.ui.View):
         label="تقديم طلب تصريح رول بلاي", 
         style=discord.ButtonStyle.blurple, 
         emoji="👾", 
-        custom_id="persistent_rp_apply_button_v5"
+        custom_id="persistent_rp_apply_button_v7"
     )
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # فتح الـ Modal مباشرة وبدون أي منطق برمجي معقد يسبب تأخير
         await interaction.response.send_modal(ApplyModal())
 
 
@@ -151,7 +153,7 @@ class ApplyCog(commands.Cog):
 
         embed = discord.Embed(
             title="🎮 طلب تصريح دخول الرول بلاي",
-            description="أهلاً بك في السيرفر!\n\nل للحصول على تصريح الرول بلاي، اضغط على الزر بالأسفل وقم بتعبئة البيانات المطلوبة.",
+            description="أهلاً بك في السيرفر!\n\nللحصول على تصريح الرول بلاي، اضغط على الزر بالأسفل وقم بتعبئة البيانات المطلوبة.",
             color=discord.Color.blurple()
         )
         embed.set_footer(text="إدارة سيرفر الرول بلاي 📗")
@@ -165,4 +167,4 @@ class ApplyCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ApplyCog(bot))
-    bot.add_view(ApplyStartView())  # إضافة الـ View لتسجيل الزر دائمياً
+    
