@@ -128,7 +128,7 @@ class ApplyStartView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="📝 تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.primary, custom_id="start_rp_apply")
+    @discord.ui.button(label="📝 تقديم طلب تصريح رول بلاي", style=discord.ButtonStyle.primary, custom_id="persistent_rp_apply_button")
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ApplyModal())
 
@@ -157,5 +157,7 @@ class ApplyCog(commands.Cog):
             pass
 
 async def setup(bot):
-    await bot.add_cog(ApplyCog(bot))
+    cog = ApplyCog(bot)
+    bot.add_view(ApplyStartView())  # تسجيل الـ View بشكل دائم
+    await bot.add_cog(cog)
     
