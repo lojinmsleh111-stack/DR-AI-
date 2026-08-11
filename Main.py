@@ -1,9 +1,10 @@
+from keep_alive import keep_alive
+keep_alive()  # تشغيل السيرفر الوهمي لإرضاء Render
 import discord
 from discord.ext import commands
 import os
 import logging
-from keep_alive import keep_alive
-keep_alive()  # تشغيل السيرفر الوهمي لإرضاء Render
+
 
 
 # إعداد التسجيل (Logging)
