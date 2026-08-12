@@ -937,3 +937,6 @@ class ApplyCog(
     ),
     inline=False
         )
+
+async def setup(bot):
+    await bot.add_cog(ApplyCog(bot))
