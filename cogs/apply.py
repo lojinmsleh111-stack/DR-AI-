@@ -930,6 +930,10 @@ class ApplyCog(
         )
 
         embed.add_field(
-            name="5️⃣ التعهد :",
-            value=answers.get(
-                "p
+    name="5️⃣ التعهد :",
+    value=answers.get(
+        "pledge",
+        "-"
+    ),
+    inline=False
+        )
