@@ -1,42 +1,39 @@
 import asyncio
 import json
+import logging
 import os
 import random
-import logging
 
 import aiohttp
 import discord
 from discord.ext import commands
 
-
 logger = logging.getLogger("bot")
-
 
 # =========================================================
 # IDs
 # =========================================================
 
-REVIEW_CHANNEL_ID = 1532414637373657169
+# روم المخالفات / مراجعة طلبات التصريح
+REVIEW_CHANNEL_ID = 1532414607577055465
+
+# روم لوق التصاريح
+APPLICATION_LOG_CHANNEL_ID = 1532414637373657169
 
 # رتبة القبول
 PASSED_ROLE_ID = 1532414257772101812
 
-# رتبة السماح بالمراجعة / setup
+# رتبة السماح بإنشاء/مراجعة التصاريح
 ALLOWED_SETUP_ROLE_ID = 1532414187685413055
 
-# الرتبة التي يتم إزالتها عند قبول العضو
+# الرتبة التي يتم إزالتها عند قبول الطلب
 ROLE_TO_REMOVE_ID = 1532414262343897319
-
-# قناة اللوقز
-LOG_CHANNEL_ID = 1532414637373657169
-
 
 # =========================================================
 # Settings
 # =========================================================
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
-
 DM_TIMEOUT_SECONDS = 300
 
 
@@ -68,9 +65,11 @@ QUESTIONS = [
     (
         "pledge",
         "5️⃣ قسم الالتزام بقوانين السيرفر :",
-        "انسخ القسم التالي وعبّي اسمك مكان ( اسمك ) وأرسله كما هو:\n\n"
-        "** اقسم بالله العظيم انا ( اسمك ) احترم قوانين سيرفر دارك سيتي واعضائه "
-        "وما اخرب او اسب وانا على حلفي ووعدي **"
+        (
+            "انسخ القسم التالي وعبّي اسمك مكان ( اسمك ) وأرسله كما هو:\n\n"
+            "** اقسم بالله العظيم انا ( اسمك ) احترم قوانين سيرفر دارك سيتي "
+            "واعضائه وما اخرب او اسب وانا على حلفي ووعدي **"
+        )
     ),
 ]
 
@@ -80,56 +79,61 @@ QUESTIONS = [
 # =========================================================
 
 def has_review_permission(member: discord.Member) -> bool:
-    """Check whether a member is allowed to accept/reject applications."""
 
     if member.guild_permissions.administrator:
         return True
 
-    role = member.guild.get_role(ALLOWED_SETUP_ROLE_ID)
+    role = member.guild.get_role(
+        ALLOWED_SETUP_ROLE_ID
+    )
 
-    return role is not None and role in member.roles
+    return (
+        role is not None
+        and role in member.roles
+    )
 
 
 # =========================================================
-# Logs
+# Application Logs
 # =========================================================
 
-async def get_log_channel(bot: commands.Bot):
-    if not LOG_CHANNEL_ID:
-        return None
+async def send_log(
+    bot: commands.Bot,
+    embed: discord.Embed
+):
 
-    channel = bot.get_channel(LOG_CHANNEL_ID)
+    channel = bot.get_channel(
+        APPLICATION_LOG_CHANNEL_ID
+    )
 
     if channel is None:
+
         try:
-            channel = await bot.fetch_channel(LOG_CHANNEL_ID)
-        except Exception:
-            logger.warning(
-                "Log channel %s not found/accessible",
-                LOG_CHANNEL_ID
+
+            channel = await bot.fetch_channel(
+                APPLICATION_LOG_CHANNEL_ID
             )
-            return None
-
-    return channel
-
-
-async def send_log(bot: commands.Bot, embed: discord.Embed):
-    channel = await get_log_channel(bot)
-
-    if channel:
-        try:
-            await channel.send(embed=embed)
 
         except Exception as e:
+
             logger.warning(
-                "Failed to send log: %s",
+                "Application log channel unavailable: %s",
                 e
             )
 
-    else:
-        logger.info(
-            "[LOG] %s",
-            embed.title
+            return
+
+    try:
+
+        await channel.send(
+            embed=embed
+        )
+
+    except Exception as e:
+
+        logger.warning(
+            "Failed to send application log: %s",
+            e
         )
 
 
@@ -137,22 +141,22 @@ async def send_log(bot: commands.Bot, embed: discord.Embed):
 # Roblox API
 # =========================================================
 
-async def check_roblox_username(username: str) -> tuple[bool, str]:
-    """
-    يتحقق من وجود حساب Roblox باستخدام Roblox Users API الرسمي.
-
-    يرجع:
-    (True, اسم الحساب الرسمي)
-    أو
-    (False, سبب الخطأ)
-    """
+async def check_roblox_username(
+    username: str
+) -> tuple[bool, str]:
 
     username = username.strip()
 
     if not username:
-        return False, "اسم Roblox فارغ."
 
-    url = "https://users.roblox.com/v1/usernames/users"
+        return (
+            False,
+            "اسم Roblox فارغ."
+        )
+
+    url = (
+        "https://users.roblox.com/v1/usernames/users"
+    )
 
     payload = {
         "usernames": [username],
@@ -161,7 +165,9 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
 
     try:
 
-        timeout = aiohttp.ClientTimeout(total=10)
+        timeout = aiohttp.ClientTimeout(
+            total=10
+        )
 
         async with aiohttp.ClientSession(
             timeout=timeout
@@ -173,11 +179,6 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
             ) as response:
 
                 if response.status != 200:
-
-                    logger.warning(
-                        "Roblox API returned status %s",
-                        response.status
-                    )
 
                     return (
                         False,
@@ -192,18 +193,18 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
                 )
 
                 if not users:
+
                     return (
                         False,
                         "حساب Roblox غير موجود."
                     )
 
-                roblox_user = users[0]
-
-                verified_username = roblox_user.get(
+                roblox_name = users[0].get(
                     "name"
                 )
 
-                if not verified_username:
+                if not roblox_name:
+
                     return (
                         False,
                         "تعذر الحصول على اسم حساب Roblox."
@@ -211,7 +212,7 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
 
                 return (
                     True,
-                    verified_username
+                    roblox_name
                 )
 
     except asyncio.TimeoutError:
@@ -221,12 +222,7 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
             "انتهى وقت الاتصال بخدمة Roblox."
         )
 
-    except aiohttp.ClientError as e:
-
-        logger.warning(
-            "Roblox API connection error: %s",
-            e
-        )
+    except aiohttp.ClientError:
 
         return (
             False,
@@ -236,7 +232,7 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
     except Exception as e:
 
         logger.exception(
-            "Unexpected Roblox API error: %s",
+            "Roblox API error: %s",
             e
         )
 
@@ -247,16 +243,12 @@ async def check_roblox_username(username: str) -> tuple[bool, str]:
 
 
 # =========================================================
-# Groq AI
+# AI Evaluation
 # =========================================================
 
-async def evaluate_application_ai(answers: dict) -> dict:
-    """
-    يرسل الإجابات لنموذج Groq لتحليل الطلب.
-
-    العمر يتم التحقق منه برمجياً قبل الوصول هنا،
-    لذلك الذكاء الاصطناعي لا يقرر إذا كان العمر أقل أو أكبر.
-    """
+async def evaluate_application_ai(
+    answers: dict
+) -> dict:
 
     api_key = os.getenv(
         "GROQ_API_KEY"
@@ -264,13 +256,9 @@ async def evaluate_application_ai(answers: dict) -> dict:
 
     if not api_key:
 
-        logger.warning(
-            "GROQ_API_KEY غير موجود"
-        )
-
         return {
             "decision": "manual_review",
-            "reason": "مفتاح API غير مضبوط بالسيرفر"
+            "reason": "مفتاح GROQ_API_KEY غير موجود."
         }
 
     try:
@@ -279,34 +267,34 @@ async def evaluate_application_ai(answers: dict) -> dict:
 
     except ImportError:
 
-        logger.error(
-            "مكتبة groq غير مثبتة. أضفها إلى requirements.txt"
-        )
-
         return {
             "decision": "manual_review",
-            "reason": "مكتبة groq غير مثبتة"
+            "reason": "مكتبة groq غير مثبتة."
         }
 
-    client = AsyncGroq(
-        api_key=api_key
-    )
-
     prompt = f"""
-أنت مشرف يراجع طلبات انضمام لسيرفر رول بلاي على ديسكورد.
+أنت مشرف يراجع طلبات رول بلاي.
 
 مهم جداً:
 العمر تم التحقق منه برمجياً مسبقاً.
-لا تحاول تغيير أو تفسير العمر.
+لا تحاول الحكم على العمر.
 
-قرر قراراً واحداً فقط:
+القرارات المسموحة فقط:
 
-- "reject": إذا كان هناك كلام غير لائق، إساءة، سبام،
-  إجابات فارغة أو عشوائية أو غير منطقية.
-- "accept": إذا كانت الإجابات جادة ومنطقية وخالية من المشاكل.
-- "manual_review": إذا كان هناك شك حقيقي.
+accept
+reject
+manual_review
 
-الإجابات:
+accept:
+إذا كانت الإجابات جادة ومنطقية.
+
+reject:
+إذا كانت الإجابات غير لائقة أو عشوائية أو مخالفة.
+
+manual_review:
+إذا كان هناك شك.
+
+أجب JSON فقط.
 
 الاسم:
 {answers.get("name")}
@@ -314,7 +302,7 @@ async def evaluate_application_ai(answers: dict) -> dict:
 العمر:
 {answers.get("age")}
 
-حساب Roblox:
+Roblox:
 {answers.get("roblox_main")}
 
 اختصار Roblox:
@@ -323,12 +311,19 @@ async def evaluate_application_ai(answers: dict) -> dict:
 التعهد:
 {answers.get("pledge")}
 
-رد فقط بصيغة JSON:
+الصيغة:
 
-{{"decision": "accept أو reject أو manual_review", "reason": "سبب مختصر بالعربي"}}
+{{
+    "decision": "accept",
+    "reason": "سبب مختصر بالعربي"
+}}
 """
 
     try:
+
+        client = AsyncGroq(
+            api_key=api_key
+        )
 
         response = await client.chat.completions.create(
             model=GROQ_MODEL,
@@ -339,12 +334,14 @@ async def evaluate_application_ai(answers: dict) -> dict:
                     "role": "user",
                     "content": prompt
                 }
-            ],
+            ]
         )
 
         text = (
-            response.choices[0]
-            .message.content
+            response
+            .choices[0]
+            .message
+            .content
             or ""
         ).strip()
 
@@ -355,30 +352,35 @@ async def evaluate_application_ai(answers: dict) -> dict:
             .strip()
         )
 
-        data = json.loads(text)
+        data = json.loads(
+            text
+        )
 
-        if data.get("decision") not in (
+        if data.get("decision") not in {
             "accept",
             "reject",
             "manual_review"
-        ):
+        }:
+
             raise ValueError(
-                f"decision غير متوقع: {data.get('decision')}"
+                "Invalid AI decision"
             )
 
         return data
 
     except Exception as e:
 
-        logger.error(
-            "فشل تحليل الطلب بالذكاء الاصطناعي: %s",
-            e,
-            exc_info=True
+        logger.exception(
+            "AI evaluation failed: %s",
+            e
         )
 
         return {
             "decision": "manual_review",
-            "reason": f"خطأ تقني بالتحليل الآلي: {e}"
+            "reason": (
+                "تعذر التحليل الآلي، "
+                "يحتاج الطلب مراجعة يدوية."
+            )
         }
 
 
@@ -386,7 +388,9 @@ async def evaluate_application_ai(answers: dict) -> dict:
 # Review Buttons
 # =========================================================
 
-class RPReviewButtons(discord.ui.View):
+class RPReviewButtons(
+    discord.ui.View
+):
 
     def __init__(
         self,
@@ -403,11 +407,25 @@ class RPReviewButtons(discord.ui.View):
         self.roblox_name = roblox_name
         self.cog = cog
 
-    async def _resolve_and_lock(
+    async def _allowed(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction: discord.Interaction
     ) -> bool:
+
+        if (
+            not interaction.guild
+            or not isinstance(
+                interaction.user,
+                discord.Member
+            )
+        ):
+
+            await interaction.response.send_message(
+                "❌ هذا الزر يعمل داخل السيرفر فقط.",
+                ephemeral=True
+            )
+
+            return False
 
         if not has_review_permission(
             interaction.user
@@ -420,21 +438,12 @@ class RPReviewButtons(discord.ui.View):
 
             return False
 
-        if button.disabled:
-
-            await interaction.response.send_message(
-                "⚠️ تم التعامل مع هذا الطلب بالفعل.",
-                ephemeral=True
-            )
-
-            return False
-
         return True
 
     @discord.ui.button(
         label="✅ قبول الطلب",
         style=discord.ButtonStyle.success,
-        custom_id="rp_review_accept"
+        custom_id="dr_apply_accept"
     )
     async def accept(
         self,
@@ -442,19 +451,15 @@ class RPReviewButtons(discord.ui.View):
         button: discord.ui.Button
     ):
 
-        if not await self._resolve_and_lock(
-            interaction,
-            button
+        if not await self._allowed(
+            interaction
         ):
             return
 
         for child in self.children:
             child.disabled = True
 
-        button.label = (
-            f"✅ مقبول بواسطة "
-            f"{interaction.user.display_name}"
-        )
+        button.label = "✅ تم القبول"
 
         await interaction.response.edit_message(
             view=self
@@ -463,15 +468,15 @@ class RPReviewButtons(discord.ui.View):
         await self.cog.finalize_application(
             self.applicant_id,
             self.roblox_name,
-            accepted=True,
-            decided_by=interaction.user.display_name,
-            reason="قرار يدوي من الإدارة"
+            True,
+            interaction.user.display_name,
+            "قرار يدوي من الإدارة"
         )
 
     @discord.ui.button(
         label="❌ رفض الطلب",
         style=discord.ButtonStyle.danger,
-        custom_id="rp_review_reject"
+        custom_id="dr_apply_reject"
     )
     async def reject(
         self,
@@ -479,19 +484,15 @@ class RPReviewButtons(discord.ui.View):
         button: discord.ui.Button
     ):
 
-        if not await self._resolve_and_lock(
-            interaction,
-            button
+        if not await self._allowed(
+            interaction
         ):
             return
 
         for child in self.children:
             child.disabled = True
 
-        button.label = (
-            f"❌ مرفوض بواسطة "
-            f"{interaction.user.display_name}"
-        )
+        button.label = "❌ تم الرفض"
 
         await interaction.response.edit_message(
             view=self
@@ -500,17 +501,19 @@ class RPReviewButtons(discord.ui.View):
         await self.cog.finalize_application(
             self.applicant_id,
             self.roblox_name,
-            accepted=False,
-            decided_by=interaction.user.display_name,
-            reason="قرار يدوي من الإدارة"
+            False,
+            interaction.user.display_name,
+            "قرار يدوي من الإدارة"
         )
 
 
 # =========================================================
-# Start Application Button
+# Start Application View
 # =========================================================
 
-class ApplyStartView(discord.ui.View):
+class ApplyStartView(
+    discord.ui.View
+):
 
     def __init__(
         self,
@@ -527,7 +530,7 @@ class ApplyStartView(discord.ui.View):
         label="تقديم طلب تصريح رول بلاي",
         style=discord.ButtonStyle.blurple,
         emoji="👾",
-        custom_id="replit_apply_btn_final"
+        custom_id="dr_apply_start"
     )
     async def start_apply(
         self,
@@ -535,69 +538,106 @@ class ApplyStartView(discord.ui.View):
         button: discord.ui.Button
     ):
 
-        if interaction.user.id in self.cog.pending_applicants:
+        user_id = interaction.user.id
 
-            return await interaction.response.send_message(
-                "⏳ عندك طلب قيد التقديم أو المراجعة حالياً، "
-                "تفقد الخاص أو انتظر الرد.",
+        if user_id in self.cog.pending_applicants:
+
+            await interaction.response.send_message(
+                "⏳ عندك طلب قيد التقديم حالياً.",
                 ephemeral=True
             )
 
+            return
+
         self.cog.pending_applicants.add(
-            interaction.user.id
+            user_id
         )
 
         try:
 
-            await interaction.user.send(
-                "📝 أهلاً بك!\n"
-                "رح أرسلك بضع أسئلة، جاوب عليها وحدة وحدة."
-            )
-
-        except discord.Forbidden:
-
-            self.cog.pending_applicants.discard(
-                interaction.user.id
-            )
-
-            return await interaction.response.send_message(
-                "❌ ما قدرت أرسلك رسالة خاصة!\n"
-                "تأكد إن الخاص مفتوح عندك وحاول مرة ثانية.",
+            # الرد على الزر أولاً حتى لا يظهر
+            # Didn't respond in time
+            await interaction.response.send_message(
+                "📩 شيك الخاص، أرسلتلك الأسئلة هناك!",
                 ephemeral=True
             )
 
-        await interaction.response.send_message(
-            "📩 شيك الخاص، أرسلتلك الأسئلة هناك!",
-            ephemeral=True
-        )
+            try:
 
-        asyncio.create_task(
-            self.cog.run_dm_interview(
-                interaction.user
+                await interaction.user.send(
+                    "📝 أهلاً بك!\n"
+                    "رح أرسلك الأسئلة وحدة وحدة."
+                )
+
+            except discord.Forbidden:
+
+                self.cog.pending_applicants.discard(
+                    user_id
+                )
+
+                await interaction.followup.send(
+                    "❌ الخاص عندك مقفل. "
+                    "افتح الرسائل الخاصة وحاول مرة ثانية.",
+                    ephemeral=True
+                )
+
+                return
+
+            asyncio.create_task(
+                self.cog.run_dm_interview(
+                    interaction.user
+                )
             )
-        )
+
+        except Exception as e:
+
+            self.cog.pending_applicants.discard(
+                user_id
+            )
+
+            logger.exception(
+                "Start application failed: %s",
+                e
+            )
 
 
 # =========================================================
 # Apply Cog
 # =========================================================
 
-class ApplyCog(commands.Cog):
+class ApplyCog(
+    commands.Cog
+):
 
-    def __init__(self, bot):
+    def __init__(
+        self,
+        bot
+    ):
 
         self.bot = bot
 
         self.pending_applicants: set[int] = set()
 
-    async def cog_load(self):
+    async def cog_load(
+        self
+    ):
 
+        # Persistent panel button
         self.bot.add_view(
             ApplyStartView(self)
         )
 
+        # Persistent review buttons
+        self.bot.add_view(
+            RPReviewButtons(
+                0,
+                "",
+                self
+            )
+        )
+
     # =====================================================
-    # DM Interview
+    # Interview
     # =====================================================
 
     async def run_dm_interview(
@@ -608,13 +648,13 @@ class ApplyCog(commands.Cog):
         answers = {}
 
         def check(
-            m: discord.Message
+            message: discord.Message
         ):
 
             return (
-                m.author.id == user.id
+                message.author.id == user.id
                 and isinstance(
-                    m.channel,
+                    message.channel,
                     discord.DMChannel
                 )
             )
@@ -627,30 +667,30 @@ class ApplyCog(commands.Cog):
                 description
             ) in QUESTIONS:
 
-                question_embed = discord.Embed(
+                embed = discord.Embed(
                     title=title,
                     description=description,
                     color=discord.Color.blurple()
                 )
 
-                question_embed.set_footer(
+                embed.set_footer(
                     text="إدارة سيرفر دارك سيتي 📗"
                 )
 
                 await user.send(
-                    embed=question_embed
+                    embed=embed
                 )
 
-                msg = await self.bot.wait_for(
+                message = await self.bot.wait_for(
                     "message",
                     check=check,
                     timeout=DM_TIMEOUT_SECONDS
                 )
 
-                answer = msg.content.strip()
+                answer = message.content.strip()
 
                 # =========================================
-                # Age Validation
+                # AGE
                 # =========================================
 
                 if key == "age":
@@ -662,23 +702,17 @@ class ApplyCog(commands.Cog):
                             "مثال: `14`"
                         )
 
-                        self.pending_applicants.discard(
-                            user.id
-                        )
-
                         return
 
-                    age = int(answer)
+                    age = int(
+                        answer
+                    )
 
                     if age < 10:
 
                         await user.send(
                             "❌ عذراً، يجب أن يكون عمرك "
-                            "10 سنوات أو أكثر للتقديم."
-                        )
-
-                        self.pending_applicants.discard(
-                            user.id
+                            "10 سنوات أو أكثر."
                         )
 
                         return
@@ -689,47 +723,40 @@ class ApplyCog(commands.Cog):
                             "❌ الرجاء إدخال عمر صحيح."
                         )
 
-                        self.pending_applicants.discard(
-                            user.id
-                        )
-
                         return
 
                 # =========================================
-                # Roblox Validation
+                # ROBLOX
                 # =========================================
 
                 if key == "roblox_main":
 
-                    checking_message = await user.send(
+                    checking = await user.send(
                         "🔎 جاري التحقق من حساب Roblox، "
                         "لو سمحت انتظر..."
                     )
 
-                    exists, result = await check_roblox_username(
-                        answer
+                    exists, result = (
+                        await check_roblox_username(
+                            answer
+                        )
                     )
 
                     if not exists:
 
-                        await checking_message.edit(
+                        await checking.edit(
                             content=(
-                                f"❌ لم يتم العثور على حساب Roblox "
-                                f"باسم `{answer}`.\n\n"
-                                "لو سمحت تأكد من اسم الحساب "
-                                "وأرسله مرة ثانية."
+                                f"❌ لم يتم العثور على حساب "
+                                f"Roblox باسم `{answer}`.\n"
+                                f"{result}"
                             )
-                        )
-
-                        self.pending_applicants.discard(
-                            user.id
                         )
 
                         return
 
-                    answers["roblox_main"] = result
+                    answers[key] = result
 
-                    await checking_message.edit(
+                    await checking.edit(
                         content=(
                             f"✅ تم العثور على حساب Roblox: "
                             f"`{result}`"
@@ -738,66 +765,50 @@ class ApplyCog(commands.Cog):
 
                     continue
 
-                # =========================================
-                # Pledge Validation
-                # =========================================
-
-                if key == "pledge":
-
-                    required_phrase = (
-                        "احترم قوانين سيرفر دارك سيتي"
-                    )
-
-                    if required_phrase not in answer:
-
-                        await user.send(
-                            "❌ لو سمحت انسخ نص التعهد "
-                            "بالشكل المطلوب مع تعبئة اسمك."
-                        )
-
-                        self.pending_applicants.discard(
-                            user.id
-                        )
-
-                        return
-
                 answers[key] = answer
 
         except asyncio.TimeoutError:
 
             await user.send(
                 "⌛ انتهى الوقت المسموح للرد.\n"
-                "الرجاء تقديم الطلب من جديد."
-            )
-
-            self.pending_applicants.discard(
-                user.id
+                "قدم الطلب من جديد."
             )
 
             return
 
         except discord.Forbidden:
 
+            return
+
+        except Exception as e:
+
+            logger.exception(
+                "Application interview failed: %s",
+                e
+            )
+
+            try:
+
+                await user.send(
+                    "❌ حدث خطأ أثناء الطلب. "
+                    "حاول مرة أخرى لاحقاً."
+                )
+
+            except Exception:
+                pass
+
+            return
+
+        finally:
+
             self.pending_applicants.discard(
                 user.id
             )
 
-            return
-
         await user.send(
             "✅ تم استلام إجاباتك.\n"
-            "جاري تحليل طلبك، رح توصلك النتيجة قريباً."
+            "جاري تحليل الطلب..."
         )
-
-        logger.info(
-            "Collected application answers from %s (%s)",
-            user,
-            user.id
-        )
-
-        # =================================================
-        # AI Evaluation
-        # =================================================
 
         ai_result = await evaluate_application_ai(
             answers
@@ -813,22 +824,70 @@ class ApplyCog(commands.Cog):
             ""
         )
 
-        # =================================================
-        # Received Log
-        # =================================================
+        if decision == "manual_review":
 
-        received_embed = discord.Embed(
-            title=(
-                "📋 طلب رول بلاي جديد"
-                if decision != "manual_review"
-                else
-                "📋 طلب رول بلاي - يحتاج مراجعة يدوية"
-            ),
-            color=discord.Color.blue()
+            await self.send_for_manual_review(
+                user,
+                answers,
+                reason
+            )
+
+        else:
+
+            await self.finalize_application(
+                user.id,
+                answers.get(
+                    "roblox_main",
+                    "Unknown"
+                ),
+                decision == "accept",
+                "🤖 الذكاء الاصطناعي",
+                reason
+            )
+
+    # =====================================================
+    # Manual Review
+    # =====================================================
+
+    async def send_for_manual_review(
+        self,
+        user,
+        answers,
+        reason=""
+    ):
+
+        channel = self.bot.get_channel(
+            REVIEW_CHANNEL_ID
         )
 
-        received_embed.add_field(
-            name="العضو",
+        if channel is None:
+
+            try:
+
+                channel = await self.bot.fetch_channel(
+                    REVIEW_CHANNEL_ID
+                )
+
+            except Exception as e:
+
+                logger.warning(
+                    "Review channel unavailable: %s",
+                    e
+                )
+
+                return
+
+        embed = discord.Embed(
+            title="📑 طلب تصريح رول بلاي - مراجعة",
+            color=discord.Color.gold()
+        )
+
+        embed.set_thumbnail(
+            url=user.display_avatar.url
+        )
+
+        embed.add_field(
+            name="👤 العضو",
             value=(
                 f"{user.mention} "
                 f"(`{user.id}`)"
@@ -836,10 +895,41 @@ class ApplyCog(commands.Cog):
             inline=False
         )
 
-        received_embed.add_field(
-            name="الاسم",
+        embed.add_field(
+            name="1️⃣ الاسم الكريم :",
             value=answers.get(
                 "name",
                 "-"
             ),
-         
+            inline=False
+        )
+
+        embed.add_field(
+            name="2️⃣ العمر :",
+            value=answers.get(
+                "age",
+                "-"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="3️⃣ حساب Roblox :",
+            value=(
+                f"`{answers.get('roblox_main', '-')}`"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="4️⃣ اختصار Roblox :",
+            value=(
+                f"`{answers.get('roblox_short', '-')}`"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="5️⃣ التعهد :",
+            value=answers.get(
+                "p
