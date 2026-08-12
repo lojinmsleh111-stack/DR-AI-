@@ -19,13 +19,20 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 DM_TIMEOUT_SECONDS = 300  # 5 دقائق للرد على كل سؤال قبل ما ينتهي الطلب تلقائياً
 
-# ترتيب الأسئلة يلي بترسل بالخاص، وحدة وحدة
+# ترتيب الأسئلة يلي بترسل بالخاص كـ Embed، وحدة وحدة
+# كل عنصر: (المفتاح، عنوان الإيمبد، وصف/نص السؤال)
 QUESTIONS = [
-    ("name", "1️⃣ ما هو اسمك الكريم؟"),
-    ("age", "2️⃣ ما هو عمرك الحقيقي؟ (أرقام فقط)"),
-    ("roblox_main", "3️⃣ ما اسم حسابك الأساسي في روبلوكس؟"),
-    ("roblox_short", "4️⃣ ما هو اختصار/يوزر الحساب؟"),
-    ("pledge", "5️⃣ اكتب تعهدك بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء:"),
+    ("name", "1️⃣ الاسم الكريم", "أدخل اسمك..."),
+    ("age", "2️⃣ عمرك الحقيقي", "الرجاء وضع عمرك الحقيقي (أرقام فقط)..."),
+    ("roblox_main", "3️⃣ اسم حسابك الأساسي في روبلوكس", "Username..."),
+    ("roblox_short", "4️⃣ اختصار الحساب", "Display Name / اليوزر..."),
+    (
+        "pledge",
+        "5️⃣ قسم الالتزام بقوانين السيرفر",
+        "انسخ القسم التالي وعبّي اسمك مكان ( اسمك ) وأرسله كما هو:\n\n"
+        "** اقسم بالله العظيم انا ( اسمك ) احترم قوانين سيرفر دارك سيتي واعضائه "
+        "وما اخرب او اسب وانا على حلفي ووعدي **",
+    ),
 ]
 
 
@@ -206,14 +213,30 @@ class ApplyCog(commands.Cog):
             return m.author.id == user.id and isinstance(m.channel, discord.DMChannel)
 
         try:
-            for key, question in QUESTIONS:
-                await user.send(question)
+            for key, title, description in QUESTIONS:
+                question_embed = discord.Embed(
+                    title=title,
+                    description=description,
+                    color=discord.Color.blurple()
+                )
+                question_embed.set_footer(text="إدارة سيرفر دارك سيتي 📗")
+                await user.send(embed=question_embed)
                 msg = await self.bot.wait_for("message", check=check, timeout=DM_TIMEOUT_SECONDS)
                 answer = msg.content.strip()
 
                 if key == "age":
                     if not answer.isdigit() or not (1 <= int(answer) <= 120):
                         await user.send("❌ الرجاء إدخال عمر صحيح (أرقام فقط). قدّم الطلب من جديد بالضغط على الزر.")
+                        self.pending_applicants.discard(user.id)
+                        return
+
+                if key == "pledge":
+                    required_phrase = "احترم قوانين سيرفر دارك سيتي"
+                    if required_phrase not in answer:
+                        await user.send(
+                            "❌ الرجاء نسخ نص القسم بالضبط مع تعبئة اسمك مكان ( اسمك ). "
+                            "قدّم الطلب من جديد بالضغط على الزر."
+                        )
                         self.pending_applicants.discard(user.id)
                         return
 
@@ -342,7 +365,7 @@ class ApplyCog(commands.Cog):
             description="أهلاً بك في السيرفر!\n\nللحصول على تصريح الرول بلاي، اضغط على الزر بالأسفل. رح نرسلك الأسئلة بالخاص.",
             color=discord.Color.blurple()
         )
-        embed.set_footer(text="إدارة سيرفر الرول بلاي 📗")
+        embed.set_footer(text="إدارة سيرفر دارك سيتي 📗")
 
         await ctx.send(embed=embed, view=ApplyStartView(self))
         try:
@@ -353,4 +376,4 @@ class ApplyCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ApplyCog(bot))
-                                     
+        
