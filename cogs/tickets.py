@@ -10,7 +10,7 @@ logger = logging.getLogger("bot")
 USERS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "users.json")
 TICKET_ALLOWED_CHANNEL_ID = 1532414607577055465
 PAYMENT_OFFICER_ROLE_ID = 1532414219843276820
-STAFF_ROLE_ID = 1524373417137016833
+STAFF_ROLE_ID = 1532414219843276820
 OVERDUE_ROLE_ID = 1533068412547497984
 GUILD_ID = 1532390688187220159
 
@@ -27,14 +27,23 @@ def save_users(data: dict):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-class PayFineButton(discord.ui.View):
+class PayFineButton(discord.ui.DynamicItem[discord.ui.Button], template=r"pay_fine:(?P<user_id>[0-9]+):(?P<ticket_index>[0-9]+)"):
     def __init__(self, target_user_id: int, ticket_index: int):
-        super().__init__(timeout=None)
+        super().__init__(
+            discord.ui.Button(
+                label="💳 تم تسديد المخالفة",
+                style=discord.ButtonStyle.success,
+                custom_id=f"pay_fine:{target_user_id}:{ticket_index}",
+            )
+        )
         self.target_user_id = target_user_id
         self.ticket_index = ticket_index
 
-    @discord.ui.button(label="💳 تم تسديد المخالفة", style=discord.ButtonStyle.success)
-    async def pay_fine(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @classmethod
+    async def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Item, match, /):
+        return cls(int(match["user_id"]), int(match["ticket_index"]))
+
+    async def callback(self, interaction: discord.Interaction):
         officer_role = interaction.guild.get_role(PAYMENT_OFFICER_ROLE_ID)
         if officer_role not in interaction.user.roles and not interaction.user.guild_permissions.administrator:
             return await interaction.response.send_message("❌ هذا الزر مخصص للضباط المصرح لهم بتأكيد التسديد فقط!", ephemeral=True)
@@ -49,13 +58,16 @@ class PayFineButton(discord.ui.View):
         if self.ticket_index >= len(tickets):
             return await interaction.response.send_message("❌ المخالفة مسددة أو غير موجودة!", ephemeral=True)
 
+        if tickets[self.ticket_index].get("paid", False):
+            return await interaction.response.send_message("⚠️ تم تسديد هذه المخالفة بالفعل.", ephemeral=True)
+
         tickets[self.ticket_index]["paid"] = True
         save_users(users)
 
-        button.disabled = True
-        button.label = f"✅ تم التسديد بواسطة {interaction.user.display_name}"
-        button.style = discord.ButtonStyle.secondary
-        await interaction.response.edit_message(view=self)
+        self.item.disabled = True
+        self.item.label = f"✅ تم التسديد بواسطة {interaction.user.display_name}"
+        self.item.style = discord.ButtonStyle.secondary
+        await interaction.response.edit_message(view=self.view)
 
         await interaction.followup.send(f"✅ تم تأكيد تسديد المخالفة للمواطن <@{self.target_user_id}> بنجاح بواسطة {interaction.user.mention}.")
 
@@ -69,6 +81,12 @@ class PayFineButton(discord.ui.View):
                         await member.remove_roles(overdue_role)
                         await interaction.channel.send(f"🟢 **تحديث:** تم رفع إيقاف الخدمات عن المواطن {member.mention}")
                     except Exception: pass
+
+
+class PayFineView(discord.ui.View):
+    def __init__(self, target_user_id: int, ticket_index: int):
+        super().__init__(timeout=None)
+        self.add_item(PayFineButton(target_user_id, ticket_index))
 
 
 class FineSelect(discord.ui.Select):
@@ -250,4 +268,5 @@ class TicketsCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(TicketsCog(bot))
-  
+
+    
