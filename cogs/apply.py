@@ -23,9 +23,9 @@ class ApplyModal(discord.ui.Modal, title="تقديم طلب تصريح رول ب
     q3 = discord.ui.TextInput(label="اسم حسابك الأساسي في روبلوكس:", placeholder="Username...", required=True, max_length=100)
     q4 = discord.ui.TextInput(label="اختصار الحساب:", placeholder="Display Name / اليوزر...", required=True, max_length=100)
     q5 = discord.ui.TextInput(
-        label="قسم التعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء:",
+        label="قسم الالتزام بقوانين السيرفر:",
         style=discord.TextStyle.paragraph,
-        placeholder="اكتب القسم هنا...",
+        placeholder="أتعهد بالالتزام بقوانين السيرفر واحترام الإدارة والأعضاء...",
         required=True,
         max_length=1000
     )
@@ -173,7 +173,15 @@ class ApplyStartView(discord.ui.View):
         custom_id="replit_apply_btn_final"
     )
     async def start_apply(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ApplyModal(self.cog))
+        try:
+            await interaction.response.send_modal(ApplyModal(self.cog))
+        except Exception as e:
+            logger.error(f"❌ فشل فتح نموذج التقديم: {e}", exc_info=True)
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message("❌ صار خطأ بفتح النموذج، حاول مرة ثانية.", ephemeral=True)
+                except Exception:
+                    pass
 
 
 class ApplyCog(commands.Cog):
@@ -215,4 +223,4 @@ class ApplyCog(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(ApplyCog(bot))
-        
+    
