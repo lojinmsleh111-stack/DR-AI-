@@ -14,19 +14,10 @@ logger = logging.getLogger("bot")
 # IDs
 # =========================================================
 
-# روم المخالفات / مراجعة طلبات التصريح
 REVIEW_CHANNEL_ID = 1532414607577055465
-
-# روم لوق التصاريح
 APPLICATION_LOG_CHANNEL_ID = 1532414637373657169
-
-# رتبة القبول
 PASSED_ROLE_ID = 1532414257772101812
-
-# رتبة السماح بإنشاء/مراجعة التصاريح
 ALLOWED_SETUP_ROLE_ID = 1532414187685413055
-
-# الرتبة التي يتم إزالتها عند قبول الطلب
 ROLE_TO_REMOVE_ID = 1532414262343897319
 
 # =========================================================
@@ -35,7 +26,6 @@ ROLE_TO_REMOVE_ID = 1532414262343897319
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 DM_TIMEOUT_SECONDS = 300
-
 
 # =========================================================
 # Questions
@@ -73,25 +63,20 @@ QUESTIONS = [
     ),
 ]
 
-
 # =========================================================
 # Permissions
 # =========================================================
 
 def has_review_permission(member: discord.Member) -> bool:
-
     if member.guild_permissions.administrator:
         return True
 
-    role = member.guild.get_role(
-        ALLOWED_SETUP_ROLE_ID
-    )
+    role = member.guild.get_role(ALLOWED_SETUP_ROLE_ID)
 
     return (
         role is not None
         and role in member.roles
     )
-
 
 # =========================================================
 # Application Logs
@@ -101,41 +86,27 @@ async def send_log(
     bot: commands.Bot,
     embed: discord.Embed
 ):
-
-    channel = bot.get_channel(
-        APPLICATION_LOG_CHANNEL_ID
-    )
+    channel = bot.get_channel(APPLICATION_LOG_CHANNEL_ID)
 
     if channel is None:
-
         try:
-
             channel = await bot.fetch_channel(
                 APPLICATION_LOG_CHANNEL_ID
             )
-
         except Exception as e:
-
             logger.warning(
                 "Application log channel unavailable: %s",
                 e
             )
-
             return
 
     try:
-
-        await channel.send(
-            embed=embed
-        )
-
+        await channel.send(embed=embed)
     except Exception as e:
-
         logger.warning(
             "Failed to send application log: %s",
             e
         )
-
 
 # =========================================================
 # Roblox API
@@ -148,15 +119,9 @@ async def check_roblox_username(
     username = username.strip()
 
     if not username:
+        return False, "اسم Roblox فارغ."
 
-        return (
-            False,
-            "اسم Roblox فارغ."
-        )
-
-    url = (
-        "https://users.roblox.com/v1/usernames/users"
-    )
+    url = "https://users.roblox.com/v1/usernames/users"
 
     payload = {
         "usernames": [username],
@@ -164,10 +129,7 @@ async def check_roblox_username(
     }
 
     try:
-
-        timeout = aiohttp.ClientTimeout(
-            total=10
-        )
+        timeout = aiohttp.ClientTimeout(total=10)
 
         async with aiohttp.ClientSession(
             timeout=timeout
@@ -179,7 +141,6 @@ async def check_roblox_username(
             ) as response:
 
                 if response.status != 200:
-
                     return (
                         False,
                         "تعذر الاتصال بخدمة Roblox حالياً."
@@ -187,50 +148,37 @@ async def check_roblox_username(
 
                 data = await response.json()
 
-                users = data.get(
-                    "data",
-                    []
-                )
+                users = data.get("data", [])
 
                 if not users:
-
                     return (
                         False,
                         "حساب Roblox غير موجود."
                     )
 
-                roblox_name = users[0].get(
-                    "name"
-                )
+                roblox_name = users[0].get("name")
 
                 if not roblox_name:
-
                     return (
                         False,
                         "تعذر الحصول على اسم حساب Roblox."
                     )
 
-                return (
-                    True,
-                    roblox_name
-                )
+                return True, roblox_name
 
     except asyncio.TimeoutError:
-
         return (
             False,
             "انتهى وقت الاتصال بخدمة Roblox."
         )
 
     except aiohttp.ClientError:
-
         return (
             False,
             "حدث خطأ أثناء الاتصال بخدمة Roblox."
         )
 
     except Exception as e:
-
         logger.exception(
             "Roblox API error: %s",
             e
@@ -241,7 +189,6 @@ async def check_roblox_username(
             "حدث خطأ غير متوقع أثناء التحقق من حساب Roblox."
         )
 
-
 # =========================================================
 # AI Evaluation
 # =========================================================
@@ -250,23 +197,17 @@ async def evaluate_application_ai(
     answers: dict
 ) -> dict:
 
-    api_key = os.getenv(
-        "GROQ_API_KEY"
-    )
+    api_key = os.getenv("GROQ_API_KEY")
 
     if not api_key:
-
         return {
             "decision": "manual_review",
             "reason": "مفتاح GROQ_API_KEY غير موجود."
         }
 
     try:
-
         from groq import AsyncGroq
-
     except ImportError:
-
         return {
             "decision": "manual_review",
             "reason": "مكتبة groq غير مثبتة."
@@ -320,10 +261,7 @@ Roblox:
 """
 
     try:
-
-        client = AsyncGroq(
-            api_key=api_key
-        )
+        client = AsyncGroq(api_key=api_key)
 
         response = await client.chat.completions.create(
             model=GROQ_MODEL,
@@ -352,24 +290,18 @@ Roblox:
             .strip()
         )
 
-        data = json.loads(
-            text
-        )
+        data = json.loads(text)
 
         if data.get("decision") not in {
             "accept",
             "reject",
             "manual_review"
         }:
-
-            raise ValueError(
-                "Invalid AI decision"
-            )
+            raise ValueError("Invalid AI decision")
 
         return data
 
     except Exception as e:
-
         logger.exception(
             "AI evaluation failed: %s",
             e
@@ -383,14 +315,11 @@ Roblox:
             )
         }
 
-
 # =========================================================
 # Review Buttons
 # =========================================================
 
-class RPReviewButtons(
-    discord.ui.View
-):
+class RPReviewButtons(discord.ui.View):
 
     def __init__(
         self,
@@ -398,10 +327,7 @@ class RPReviewButtons(
         roblox_name: str,
         cog: "ApplyCog"
     ):
-
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
         self.applicant_id = applicant_id
         self.roblox_name = roblox_name
@@ -419,23 +345,19 @@ class RPReviewButtons(
                 discord.Member
             )
         ):
-
             await interaction.response.send_message(
                 "❌ هذا الزر يعمل داخل السيرفر فقط.",
                 ephemeral=True
             )
-
             return False
 
         if not has_review_permission(
             interaction.user
         ):
-
             await interaction.response.send_message(
                 "❌ لا تملك صلاحية القيام بهذا الإجراء.",
                 ephemeral=True
             )
-
             return False
 
         return True
@@ -451,9 +373,7 @@ class RPReviewButtons(
         button: discord.ui.Button
     ):
 
-        if not await self._allowed(
-            interaction
-        ):
+        if not await self._allowed(interaction):
             return
 
         for child in self.children:
@@ -484,9 +404,7 @@ class RPReviewButtons(
         button: discord.ui.Button
     ):
 
-        if not await self._allowed(
-            interaction
-        ):
+        if not await self._allowed(interaction):
             return
 
         for child in self.children:
@@ -506,24 +424,17 @@ class RPReviewButtons(
             "قرار يدوي من الإدارة"
         )
 
-
 # =========================================================
 # Start Application View
 # =========================================================
 
-class ApplyStartView(
-    discord.ui.View
-):
+class ApplyStartView(discord.ui.View):
 
     def __init__(
         self,
         cog: "ApplyCog"
     ):
-
-        super().__init__(
-            timeout=None
-        )
-
+        super().__init__(timeout=None)
         self.cog = cog
 
     @discord.ui.button(
@@ -541,22 +452,16 @@ class ApplyStartView(
         user_id = interaction.user.id
 
         if user_id in self.cog.pending_applicants:
-
             await interaction.response.send_message(
                 "⏳ عندك طلب قيد التقديم حالياً.",
                 ephemeral=True
             )
-
             return
 
-        self.cog.pending_applicants.add(
-            user_id
-        )
+        self.cog.pending_applicants.add(user_id)
 
         try:
 
-            # الرد على الزر أولاً حتى لا يظهر
-            # Didn't respond in time
             await interaction.response.send_message(
                 "📩 شيك الخاص، أرسلتلك الأسئلة هناك!",
                 ephemeral=True
@@ -600,40 +505,76 @@ class ApplyStartView(
                 e
             )
 
-
 # =========================================================
 # Apply Cog
 # =========================================================
 
-class ApplyCog(
-    commands.Cog
-):
+class ApplyCog(commands.Cog):
 
-    def __init__(
-        self,
-        bot
-    ):
-
+    def __init__(self, bot):
         self.bot = bot
-
         self.pending_applicants: set[int] = set()
 
-    async def cog_load(
-        self
-    ):
+    async def cog_load(self):
 
-        # Persistent panel button
         self.bot.add_view(
             ApplyStartView(self)
         )
 
-        # Persistent review buttons
         self.bot.add_view(
             RPReviewButtons(
                 0,
                 "",
                 self
             )
+        )
+
+    # =====================================================
+    # Setup Panel Command
+    # =====================================================
+
+    @commands.hybrid_command(
+        name="setup_apply",
+        description="إنشاء لوحة تقديم تصريح الرول بلاي"
+    )
+    async def setup_apply(
+        self,
+        ctx: commands.Context
+    ):
+
+        if (
+            not isinstance(
+                ctx.author,
+                discord.Member
+            )
+            or not has_review_permission(
+                ctx.author
+            )
+        ):
+
+            await ctx.send(
+                "❌ لا تملك صلاحية إنشاء لوحة التصريح."
+            )
+
+            return
+
+        embed = discord.Embed(
+            title="🎮 طلب تصريح دخول الرول بلاي",
+            description=(
+                "أهلاً بك في السيرفر!\n\n"
+                "اضغط على الزر بالأسفل "
+                "وسيتم إرسال الأسئلة لك في الخاص."
+            ),
+            color=discord.Color.blurple()
+        )
+
+        embed.set_footer(
+            text="إدارة سيرفر دارك سيتي 📗"
+        )
+
+        await ctx.send(
+            embed=embed,
+            view=ApplyStartView(self)
         )
 
     # =====================================================
@@ -647,9 +588,7 @@ class ApplyCog(
 
         answers = {}
 
-        def check(
-            message: discord.Message
-        ):
+        def check(message: discord.Message):
 
             return (
                 message.author.id == user.id
@@ -690,7 +629,7 @@ class ApplyCog(
                 answer = message.content.strip()
 
                 # =========================================
-                # AGE
+                # AGE FIX
                 # =========================================
 
                 if key == "age":
@@ -704,10 +643,10 @@ class ApplyCog(
 
                         return
 
-                    age = int(
-                        answer
-                    )
+                    age = int(answer)
 
+                    # أقل من 10 = رفض
+                    # 10 أو أكثر = مسموح
                     if age < 10:
 
                         await user.send(
@@ -777,7 +716,6 @@ class ApplyCog(
             return
 
         except discord.Forbidden:
-
             return
 
         except Exception as e:
@@ -930,13 +868,275 @@ class ApplyCog(
         )
 
         embed.add_field(
-    name="5️⃣ التعهد :",
-    value=answers.get(
-        "pledge",
-        "-"
-    ),
-    inline=False
+            name="5️⃣ التعهد :",
+            value=answers.get(
+                "pledge",
+                "-"
+            ),
+            inline=False
         )
 
+        if reason:
+
+            embed.add_field(
+                name="📝 سبب المراجعة :",
+                value=reason[:1024],
+                inline=False
+            )
+
+        await channel.send(
+            embed=embed,
+            view=RPReviewButtons(
+                user.id,
+                answers.get(
+                    "roblox_main",
+                    "Unknown"
+                ),
+                self
+            )
+        )
+
+    # =====================================================
+    # Finalize
+    # =====================================================
+
+    async def finalize_application(
+        self,
+        applicant_id,
+        roblox_name,
+        accepted,
+        decided_by,
+        reason=""
+    ):
+
+        guild = None
+
+        for server in self.bot.guilds:
+
+            if server.get_member(applicant_id):
+
+                guild = server
+                break
+
+        member = (
+            guild.get_member(applicant_id)
+            if guild
+            else None
+        )
+
+        random_id = None
+        new_nickname = None
+
+        # =================================================
+        # ACCEPT
+        # =================================================
+
+        if accepted and member:
+
+            # رقم عشوائي من 6 أرقام
+            random_id = random.randint(
+                100000,
+                999999
+            )
+
+            # Discord nickname max = 32
+            max_roblox_length = (
+                32
+                - len("DR |  | ")
+                - 6
+            )
+
+            roblox_name = roblox_name[
+                :max_roblox_length
+            ]
+
+            new_nickname = (
+                f"DR | {roblox_name} | {random_id}"
+            )
+
+            # =============================================
+            # Add accepted role
+            # =============================================
+
+            passed_role = guild.get_role(
+                PASSED_ROLE_ID
+            )
+
+            if passed_role:
+
+                try:
+
+                    await member.add_roles(
+                        passed_role,
+                        reason=(
+                            "تم قبول تصريح الرول بلاي"
+                        )
+                    )
+
+                except Exception as e:
+
+                    logger.warning(
+                        "Could not add passed role: %s",
+                        e
+                    )
+
+            # =============================================
+            # Remove old role
+            # =============================================
+
+            old_role = guild.get_role(
+                ROLE_TO_REMOVE_ID
+            )
+
+            if (
+                old_role
+                and old_role in member.roles
+            ):
+
+                try:
+
+                    await member.remove_roles(
+                        old_role,
+                        reason=(
+                            "تم قبول تصريح الرول بلاي"
+                        )
+                    )
+
+                except Exception as e:
+
+                    logger.warning(
+                        "Could not remove old role: %s",
+                        e
+                    )
+
+            # =============================================
+            # Change nickname
+            # =============================================
+
+            try:
+
+                await member.edit(
+                    nick=new_nickname,
+                    reason=(
+                        "تم قبول تصريح الرول بلاي"
+                    )
+                )
+
+            except Exception as e:
+
+                logger.warning(
+                    "Could not change nickname: %s",
+                    e
+                )
+
+            # =============================================
+            # DM
+            # =============================================
+
+            try:
+
+                await member.send(
+                    "🎉 **تم قبول طلبك!**\n\n"
+                    f"🎮 حساب Roblox: `{roblox_name}`\n"
+                    f"🆔 رقمك: `{random_id}`\n"
+                    f"👤 اسمك الجديد: `{new_nickname}`"
+                )
+
+            except Exception:
+                pass
+
+        # =================================================
+        # REJECT
+        # =================================================
+
+        elif not accepted and member:
+
+            try:
+
+                await member.send(
+                    "❌ **تم رفض طلب تصريح الرول بلاي.**\n\n"
+                    f"📝 السبب: "
+                    f"{reason or 'قرار الإدارة'}"
+                )
+
+            except Exception:
+                pass
+
+        # =================================================
+        # LOG
+        # =================================================
+
+        embed = discord.Embed(
+            title=(
+                "📜 قبول تصريح"
+                if accepted
+                else
+                "📕 رفض تصريح"
+            ),
+            color=(
+                discord.Color.green()
+                if accepted
+                else
+                discord.Color.red()
+            )
+        )
+
+        embed.add_field(
+            name="👤 العضو",
+            value=(
+                f"<@{applicant_id}> "
+                f"(`{applicant_id}`)"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="👮 بواسطة",
+            value=decided_by,
+            inline=True
+        )
+
+        if accepted:
+
+            embed.add_field(
+                name="🎮 Roblox",
+                value=f"`{roblox_name}`",
+                inline=True
+            )
+
+            embed.add_field(
+                name="🆔 RP ID",
+                value=f"`{random_id}`",
+                inline=True
+            )
+
+            embed.add_field(
+                name="👤 الاسم الجديد",
+                value=f"`{new_nickname}`",
+                inline=False
+            )
+
+        if reason:
+
+            embed.add_field(
+                name="📝 السبب",
+                value=reason[:1024],
+                inline=False
+            )
+
+        await send_log(
+            self.bot,
+            embed
+        )
+
+
+# =========================================================
+# Discord Extension Setup
+# =========================================================
+
 async def setup(bot):
-    await bot.add_cog(ApplyCog(bot))
+
+    await bot.add_cog(
+        ApplyCog(bot)
+)
+     
