@@ -233,14 +233,56 @@ async def check_roblox_username(
 # Traffic fine question
 # =========================================================
 
+class TrafficFineSelect(discord.ui.Select):
+    def __init__(self, view: "TrafficFineView"):
+        self.fine_view = view
+
+        options = [
+            discord.SelectOption(
+                label="3000",
+                value="3000"
+            ),
+            discord.SelectOption(
+                label="2500",
+                value="2500"
+            ),
+            discord.SelectOption(
+                label="2000",
+                value="2000"
+            ),
+        ]
+
+        super().__init__(
+            placeholder="اختر قيمة المخالفة...",
+            options=options,
+            min_values=1,
+            max_values=1,
+            custom_id="dr_apply_fine_select"
+        )
+
+    async def callback(
+        self,
+        interaction: discord.Interaction
+    ):
+        await self.fine_view._choose(
+            interaction,
+            self.values[0]
+        )
+
+
 class TrafficFineView(discord.ui.View):
-    """Three choices with a maximum of two attempts."""
+    """Select menu with a maximum of two attempts."""
 
     def __init__(self, applicant_id: int):
         super().__init__(timeout=DM_TIMEOUT_SECONDS)
+
         self.applicant_id = applicant_id
         self.attempts = 0
         self.answer = None
+
+        self.add_item(
+            TrafficFineSelect(self)
+        )
 
     async def _choose(
         self,
@@ -249,7 +291,8 @@ class TrafficFineView(discord.ui.View):
     ):
         if interaction.user.id != self.applicant_id:
             await interaction.response.send_message(
-                "❌ هذه الاختيارات ليست مخصصة لك."
+                "❌ هذه الاختيارات ليست مخصصة لك.",
+                ephemeral=True
             )
             return
 
@@ -257,62 +300,33 @@ class TrafficFineView(discord.ui.View):
 
         if value == "3000":
             self.answer = value
-            disable_view_buttons(self)
-            await interaction.response.edit_message(view=self)
+
+            for child in self.children:
+                child.disabled = True
+
+            await interaction.response.edit_message(
+                view=self
+            )
+
             self.stop()
             return
 
         if self.attempts == 1:
             await interaction.response.send_message(
-                "❌ إجابتك خاطئة، لديك محاولة أخيرة."
+                "❌ إجابتك خاطئة، لديك محاولة أخيرة.",
+                ephemeral=True
             )
             return
 
-        disable_view_buttons(self)
+        for child in self.children:
+            child.disabled = True
 
         await interaction.response.edit_message(
             content="❌ أخطأت في المحاولتين، تم رفض طلب التصريح.",
             view=self
         )
+
         self.stop()
-
-    @discord.ui.button(
-        label="3000",
-        style=discord.ButtonStyle.secondary,
-        custom_id="dr_apply_fine_3000"
-    )
-    async def choose_3000(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await self._choose(interaction, "3000")
-
-    @discord.ui.button(
-        label="2500",
-        style=discord.ButtonStyle.secondary,
-        custom_id="dr_apply_fine_2500"
-    )
-    async def choose_2500(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await self._choose(interaction, "2500")
-
-    @discord.ui.button(
-        label="2000",
-        style=discord.ButtonStyle.secondary,
-        custom_id="dr_apply_fine_2000"
-    )
-    async def choose_2000(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await self._choose(interaction, "2000")
-
-
 # =========================================================
 # AI Evaluation
 # =========================================================
