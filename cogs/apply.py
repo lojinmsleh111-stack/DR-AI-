@@ -255,7 +255,7 @@ class TrafficFineView(discord.ui.View):
 
         self.attempts += 1
 
-        if value == "2500":
+        if value == "3000":
             self.answer = value
             disable_view_buttons(self)
             await interaction.response.edit_message(view=self)
