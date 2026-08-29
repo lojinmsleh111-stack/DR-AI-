@@ -191,9 +191,9 @@ class TicketTypeSelect(discord.ui.Select):
 
             return
 
-        ticket_type = self.values[0]
+            ticket_type = self.values[0]
 
-        if ticket_type == "admin":
+        if ticket_type == "شكوى إدارية":
 
             channel_name = (
                 f"ticket-admin-{interaction.user.name}"
@@ -201,13 +201,21 @@ class TicketTypeSelect(discord.ui.Select):
 
             title = "🛠️ التذكرة الإدارية"
 
-        else:
+        elif ticket_type == "دعم فني":
 
             channel_name = (
                 f"ticket-support-{interaction.user.name}"
             )
 
             title = "🖥️ تذكرة الدعم الفني"
+
+        elif ticket_type == "شراء":
+
+            channel_name = (
+                f"ticket-buy-{interaction.user.name}"
+            )
+
+            title = "💸 تذكرة الشراء"
 
         channel_name = (
             channel_name
@@ -253,10 +261,12 @@ class TicketTypeSelect(discord.ui.Select):
                 )
             )
 
-        # الرتبتين
-        for role_id in STAFF_ROLE_IDS:
+        # صلاحيات تذكرة الشراء فقط
+        if ticket_type == "شراء":
 
-            role = guild.get_role(role_id)
+            role = guild.get_role(
+                1532414187685413055
+            )
 
             if role:
 
@@ -271,39 +281,25 @@ class TicketTypeSelect(discord.ui.Select):
                     )
                 )
 
-        try:
+        # الرتبتين
+        if ticket_type != "شراء":
 
-            channel = await guild.create_text_channel(
-                name=channel_name,
-                category=category,
-                overwrites=overwrites,
-                topic=(
-                    f"ticket_owner:"
-                    f"{interaction.user.id}"
-                ),
-                reason=(
-                    f"Ticket opened by "
-                    f"{interaction.user}"
-                )
-            )
+            for role_id in STAFF_ROLE_IDS:
 
-        except discord.Forbidden:
+                role = guild.get_role(role_id)
 
-            await interaction.response.send_message(
-                "❌ البوت لا يملك صلاحية إنشاء التكت.",
-                ephemeral=True
-            )
+                if role:
 
-            return
-
-        except discord.HTTPException:
-
-            await interaction.response.send_message(
-                "❌ حدث خطأ أثناء إنشاء التكت.",
-                ephemeral=True
-            )
-
-            return
+                    overwrites[role] = (
+                        discord.PermissionOverwrite(
+                            view_channel=True,
+                            send_messages=True,
+                            read_message_history=True,
+                            manage_messages=True,
+                            attach_files=True,
+                            embed_links=True
+                        )
+                    )
 
         # =================================================
         # TICKET MESSAGE
