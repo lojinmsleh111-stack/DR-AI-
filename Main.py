@@ -26,9 +26,10 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
 
         initial_extensions = [
-            "cogs.apply",
-            "cogs.streak",
-            "cogs.tickets"
+    "cogs.apply",
+    "cogs.streak",
+    "cogs.tickets",
+    "cogs.support_tickets"
         ]
 
         for ext in initial_extensions:
