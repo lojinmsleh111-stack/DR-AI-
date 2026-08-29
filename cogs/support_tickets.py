@@ -111,7 +111,7 @@ class TicketTypeSelect(discord.ui.Select):
                 description="فتح تذكرة للدعم الفني",
                 emoji="🖥️",
                 value="دعم فني"
-            )
+            ),
 
             discord.SelectOption(
                 label="تذكرة الشراء",
@@ -119,7 +119,6 @@ class TicketTypeSelect(discord.ui.Select):
                 emoji="💸",
                 value="شراء"
             )
-            
 
         ]
 
@@ -191,7 +190,7 @@ class TicketTypeSelect(discord.ui.Select):
 
             return
 
-            ticket_type = self.values[0]
+        ticket_type = self.values[0]
 
         if ticket_type == "شكوى إدارية":
 
@@ -216,6 +215,15 @@ class TicketTypeSelect(discord.ui.Select):
             )
 
             title = "💸 تذكرة الشراء"
+
+        else:
+
+            await interaction.response.send_message(
+                "❌ نوع التذكرة غير صالح.",
+                ephemeral=True
+            )
+
+            return
 
         channel_name = (
             channel_name
@@ -302,6 +310,37 @@ class TicketTypeSelect(discord.ui.Select):
                     )
 
         # =================================================
+        # CREATE TICKET
+        # =================================================
+
+        try:
+
+            channel = await guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                overwrites=overwrites,
+                topic=f"ticket_owner:{interaction.user.id}"
+            )
+
+        except discord.Forbidden:
+
+            await interaction.response.send_message(
+                "❌ البوت لا يملك صلاحية إنشاء التكت أو تعديل الصلاحيات.",
+                ephemeral=True
+            )
+
+            return
+
+        except discord.HTTPException:
+
+            await interaction.response.send_message(
+                "❌ حدث خطأ أثناء إنشاء التكت.",
+                ephemeral=True
+            )
+
+            return
+
+        # =================================================
         # TICKET MESSAGE
         # =================================================
 
@@ -336,10 +375,6 @@ class TicketControlView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    # -----------------------------------------------------
-    # CLAIM
-    # -----------------------------------------------------
-
     @discord.ui.button(
         label="استلام",
         emoji="🙋",
@@ -365,10 +400,6 @@ class TicketControlView(discord.ui.View):
             f"🙋 تم استلام التكت بواسطة "
             f"{interaction.user.mention}."
         )
-
-    # -----------------------------------------------------
-    # CLOSE
-    # -----------------------------------------------------
 
     @discord.ui.button(
         label="إغلاق",
@@ -458,10 +489,6 @@ class TicketControlView(discord.ui.View):
             view=ClosedTicketView()
         )
 
-    # -----------------------------------------------------
-    # DELETE
-    # -----------------------------------------------------
-
     @discord.ui.button(
         label="حذف",
         emoji="🗑️",
@@ -550,10 +577,6 @@ class SupportTickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # =====================================================
-    # /ticket_panel
-    # =====================================================
-
     @app_commands.command(
         name="ticket_panel",
         description="إرسال لوحة التكت"
@@ -584,10 +607,6 @@ class SupportTickets(commands.Cog):
 
             return
 
-        # =================================================
-        # القوانين فقط
-        # =================================================
-
         embed = discord.Embed(
             title="قـوانـيـن التذكرة 🎟️",
             description=(
@@ -612,10 +631,6 @@ class SupportTickets(commands.Cog):
             "✅ تم إرسال لوحة التكت.",
             ephemeral=True
         )
-
-    # =====================================================
-    # /ticket_call
-    # =====================================================
 
     @app_commands.command(
         name="ticket_call",
@@ -686,10 +701,6 @@ class SupportTickets(commands.Cog):
                 ephemeral=True
             )
 
-    # =====================================================
-    # /ticket_rename
-    # =====================================================
-
     @app_commands.command(
         name="ticket_rename",
         description="تغيير اسم التكت"
@@ -747,10 +758,6 @@ class SupportTickets(commands.Cog):
                 ephemeral=True
             )
 
-    # =====================================================
-    # /ticket_add
-    # =====================================================
-
     @app_commands.command(
         name="ticket_add",
         description="إضافة شخص إلى التكت"
@@ -792,10 +799,6 @@ class SupportTickets(commands.Cog):
                 ephemeral=True
             )
 
-    # =====================================================
-    # /ticket_remove
-    # =====================================================
-
     @app_commands.command(
         name="ticket_remove",
         description="إزالة شخص من التكت"
@@ -834,6 +837,7 @@ class SupportTickets(commands.Cog):
                 overwrite=None
             )
 
+            
             await interaction.response.send_message(
                 f"✅ تمت إزالة "
                 f"{member.mention} من التكت."
@@ -845,10 +849,6 @@ class SupportTickets(commands.Cog):
                 "❌ لا أملك صلاحية تعديل الروم.",
                 ephemeral=True
             )
-
-    # =====================================================
-    # /ticket_close
-    # =====================================================
 
     @app_commands.command(
         name="ticket_close",
@@ -898,9 +898,20 @@ class SupportTickets(commands.Cog):
                 f"closed-{new_name}"
             )
 
-        await channel.edit(
-            name=new_name[:100]
-        )
+        try:
+
+            await channel.edit(
+                name=new_name[:100]
+            )
+
+        except discord.Forbidden:
+
+            await interaction.response.send_message(
+                "❌ البوت لا يملك صلاحية تغيير اسم الروم.",
+                ephemeral=True
+            )
+
+            return
 
         embed = discord.Embed(
             title="🔒 تم إغلاق التكت",
