@@ -559,7 +559,7 @@ class SupportTickets(commands.Cog):
 
         embed = discord.Embed(
             title="🎟️ نظام التذاكر",
-            description=)
+            description=(َ
             ),
             color=discord.Color.blurple()
         )
