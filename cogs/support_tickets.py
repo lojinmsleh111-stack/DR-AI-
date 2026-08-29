@@ -559,12 +559,7 @@ class SupportTickets(commands.Cog):
 
         embed = discord.Embed(
             title="🎟️ نظام التذاكر",
-            description=(
-                "يرجى اختيار نوع التذكرة من القائمة بالأسفل.\n\n"
-                "🛠️ **تذكرة إدارية**\n"
-                "للاستفسارات والشكاوى والطلبات الإدارية.\n\n"
-                "🖥️ **الدعم الفني**\n"
-                "للمشاكل والاستفسارات التقنية."
+            description=)
             ),
             color=discord.Color.blurple()
         )
