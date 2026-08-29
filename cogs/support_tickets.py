@@ -103,15 +103,23 @@ class TicketTypeSelect(discord.ui.Select):
                 label="تذكرة إدارية",
                 description="فتح تذكرة إدارية",
                 emoji="🛠️",
-                value="admin"
+                value="شكوى إدارية"
             ),
 
             discord.SelectOption(
                 label="الدعم الفني",
                 description="فتح تذكرة للدعم الفني",
                 emoji="🖥️",
-                value="support"
+                value="دعم فني"
             )
+
+            discord.SelectOption(
+                label="تذكرة الشراء",
+                description="فتح تذكرة لشراء رتبة او لطلب اعلان",
+                emoji="💸",
+                value="شراء"
+            )
+            
 
         ]
 
