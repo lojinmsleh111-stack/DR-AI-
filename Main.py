@@ -30,7 +30,7 @@ class MyBot(commands.Bot):
     "cogs.streak",
     "cogs.tickets",
     "cogs.support_tickets",
-    "cogs.gv_roles",
+    
         ]
 
         for ext in initial_extensions:
