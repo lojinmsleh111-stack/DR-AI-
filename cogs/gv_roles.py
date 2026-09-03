@@ -1,434 +1,322 @@
+
 import discord
 from discord.ext import commands
 
+# =========================
+# IDs
+# =========================
 
-# =========================================================
-# CHANNELS / ROLES / SETTINGS
-# =========================================================
-
-# روم الـ Panel
 PANEL_CHANNEL_ID = 1543715791558414336
 
-# روم رول أونري
-OWNER_CHANNEL_ID = 1543715737040855091
+# رول أونري
+OWNER_CHANNEL_ID = 1532414484151402586
 
-# رومات رول بلاي GV العادي
-PLAY_CHANNEL_IDS = (
-    1532414484151402586,
-    1532414474437394482,
-)
+# رول بلاي العادي
+PLAY_CHANNEL_ID = 1532414474437394482
 
-# روم إرسال كود الرول
+# روم الأكواد
 CODE_CHANNEL_ID = 1532414489561927843
 
-# روم القوانين
-RULES_CHANNEL_ID = 1458141125461147791
+# الرتبة الموجودة في الرسائل
+ROLE_ID = 1532414257772101812
 
-# الرتب
-GV_NOTIFY_ROLE_ID = 1532414257772101812
-
-# الرتب المستخدمة في رسالة الرول
-OWNER_ROLE_ID = 0
-GV_ROLE_ID = 0
-
-# =========================================================
-# OTHER CHANNELS
-# =========================================================
-
-VOICE_RULE_CHANNEL_ID = 1532414490694385895
-HOST_CHANNEL_ID = 1532414489561927843
+# الرومات الموجودة داخل نص القوانين
 NO_USE_CHANNEL_ID = 1532414397245296700
-FINAL_RULES_CHANNEL_ID = 1532414374789255419
-
-# =========================================================
-# EMOJIS
-# =========================================================
-
-# استخدمنا إيموجي عادي حتى لا تحتاج IDs من ملف config
-GV_EMOJI = "🎮"
-YES_EMOJI = "✅"
-NO_EMOJI = "❌"
+HOST_CHAT_CHANNEL_ID = 1532414490694385895
+RULES_CHANNEL_ID = 1532414374789255419
 
 
-# =========================================================
-# حفظ اختيار العضو
-# =========================================================
+# =========================
+# الاختيار لكل مستخدم
+# =========================
 
 selected_roles = {}
 
 
-# =========================================================
-# VIEW
-# =========================================================
+# =========================
+# View
+# =========================
 
 class GvView(discord.ui.View):
 
-    def __init__(self, bot):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.bot = bot
 
-    async def send_to_channels(
-        self,
-        interaction: discord.Interaction,
-        channel_ids,
-        content
-    ):
-        sent = []
-
-        for channel_id in channel_ids:
-
-            channel = interaction.guild.get_channel(channel_id)
-
-            if not channel:
-                continue
-
-            try:
-                await channel.send(content)
-                sent.append(channel)
-
-            except discord.HTTPException:
-                pass
-
-        return sent
-
-    # =====================================================
+    # =========================
     # رول أونري
-    # =====================================================
+    # =========================
 
     @discord.ui.button(
         label="رول اونر",
         style=discord.ButtonStyle.primary,
         custom_id="gv_owner"
     )
-    async def owner(
+    async def owner_button(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
-
         selected_roles[interaction.user.id] = "owner"
 
-        text = (
-            "**__ رول بلاي اونري\n\n"
-            f"- رول بلاي اونري {GV_EMOJI}\n\n"
-            f"- صاحب الرول : {interaction.user.mention}\n\n"
-            "`في حال عدم تصويتك للرول وتخش الرول سيتم معاقبتك`\n\n"
-            "`يرجى مراجعة القوانين قبل دخولك للرول لتفادي العواقب`\n\n"
-            f"<@&{OWNER_ROLE_ID}>\n\n"
-            f"<@&{GV_ROLE_ID}>\n\n"
-            "..\n"
-            "__**"
-        )
-
-        await self.send_to_channels(
-            interaction,
-            (OWNER_CHANNEL_ID,),
-            text
-        )
-
         await interaction.response.send_message(
-            "تم إرسال نموذج رول اونري.",
-            ephemeral=True
+            f"""# رول بـلاي 🎮
+
+- الهوست: {interaction.user.mention}
+
+- لي اضافه هوست توجه <#1532414489561927843>
+
+
+- لي تصويت اضغط ✅
+
+<@&1532414257772101812>""",
+            ephemeral=False
         )
 
-    # =====================================================
+    # =========================
     # رول بلاي GV
-    # =====================================================
+    # =========================
 
     @discord.ui.button(
         label="رول بلاي GV",
         style=discord.ButtonStyle.primary,
         custom_id="gv_play"
     )
-    async def play(
+    async def play_button(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
-
         selected_roles[interaction.user.id] = "play"
 
-        text = (
-            "**__ رول بلاي Gv\n\n"
-            f"رول بلاي جرينفل {GV_EMOJI}\n\n"
-            f"صاحب الرول : {interaction.user.mention}\n\n"
-            "`في حال عدم تصويتك للرول وتخش الرول سيتم معاقبتك`\n\n"
-            "`يرجى مراجعة القوانين قبل دخولك للرول لتفادي العواقب`\n\n"
-            f"<@&{OWNER_ROLE_ID}>\n\n"
-            f"<@&{GV_ROLE_ID}>\n\n"
-            "..\n\n"
-            "__**"
-        )
-
-        # يرسل في نفس رومات رول بلاي GV
-        await self.send_to_channels(
-            interaction,
-            PLAY_CHANNEL_IDS,
-            text
-        )
-
         await interaction.response.send_message(
-            "تم إرسال نموذج رول بلاي GV.",
-            ephemeral=True
+            f"""# رول بـلاي 🎮
+
+- الهوست: {interaction.user.mention}
+
+- لي اضافه هوست توجه <#1532414489561927843>
+
+
+- لي تصويت اضغط ✅
+
+<@&1532414257772101812>""",
+            ephemeral=False
         )
 
-    # =====================================================
+    # =========================
     # بداية الرول
-    # =====================================================
+    # =========================
 
     @discord.ui.button(
         label="بداية الرول",
         style=discord.ButtonStyle.success,
         custom_id="gv_start"
     )
-    async def start(
+    async def start_button(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+        role = selected_roles.get(interaction.user.id)
 
-        selected_role = selected_roles.get(
-            interaction.user.id
-        )
-
-        # ---------------------------------------------
-        # أونري
-        # ---------------------------------------------
-
-        if selected_role == "owner":
-
-            target_channels = (
-                OWNER_CHANNEL_ID,
-            )
-
-        # ---------------------------------------------
-        # GV عادي
-        # ---------------------------------------------
-
-        elif selected_role == "play":
-
-            target_channels = PLAY_CHANNEL_IDS
-
-        else:
-
+        if role is None:
             await interaction.response.send_message(
-                "اختر رول أونري أو رول بلاي GV أولاً.",
+                "❌ اختر رول أونر أو رول بلاي أولاً.",
                 ephemeral=True
             )
             return
 
-        # ---------------------------------------------
-        # رسالة بداية الرول
-        # ---------------------------------------------
-
-        text = (
-            "# قـوانـيـن رول بـلاي\n\n"
-            "- بـسم الله الرحمن الرحيم توكلنا على الله\n\n"
-            f"- الهوست: {interaction.user.mention}\n\n"
-            "- سرعه المسار الايمن 60 والايسر 65\n\n"
-            "- ممنوع الهروب من الاداره والهوست\n\n"
-            "- احترام قرارات هوست والاداره\n\n"
-            "- تخريبك يؤدي لعقوبتك\n\n"
-            f"- ممنوع استخدام <#{NO_USE_CHANNEL_ID}>\n\n"
-            "- ممنوع وضع لوحات مميزه بدون تصريح\n\n"
-            f"- تواصل داخل رومين <#{VOICE_RULE_CHANNEL_ID}> ورم صوتي\n\n"
-            "- الاداره تتمنى لكم رول جميل وهادئ\n\n"
-            f"<@&{GV_NOTIFY_ROLE_ID}>\n\n"
-            f"<#{FINAL_RULES_CHANNEL_ID}>"
-        )
-
-        await self.send_to_channels(
-            interaction,
-            target_channels,
-            text
-        )
-
-        await interaction.response.send_message(
-            "تم إرسال بداية الرول.",
-            ephemeral=True
-        )
-
-    # =====================================================
-    # التقييم
-    # =====================================================
-
-    @discord.ui.button(
-        label="تقييم الرول",
-        style=discord.ButtonStyle.secondary,
-        custom_id="gv_rating"
-    )
-    async def rating(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-
-        selected_role = selected_roles.get(
-            interaction.user.id
-        )
-
-        if selected_role == "owner":
-
-            target_channels = (
-                OWNER_CHANNEL_ID,
-            )
-
-        elif selected_role == "play":
-
-            target_channels = PLAY_CHANNEL_IDS
-
+        if role == "owner":
+            channel_id = OWNER_CHANNEL_ID
         else:
+            channel_id = PLAY_CHANNEL_ID
 
+        channel = interaction.guild.get_channel(channel_id)
+
+        if channel is None:
             await interaction.response.send_message(
-                "اختر رول أونري أو رول بلاي GV أولاً.",
+                "❌ ما قدرت ألقى روم الرول.",
                 ephemeral=True
             )
             return
 
-        text = (
-            "# تقييم رول 🎮\n\n"
-            f"- الهوست: {interaction.user.mention}\n\n"
-            "- اذا عجبك ✅ إذا لا ❌ ذكر سبب بشات العام\n\n"
-            "- ملاحظه 🔴\n\n"
-            "- اذا متبلك ممنوع تصوت في حال تصويتك "
-            "يحق للهوست رفع تذكره وتتم معاقبتك\n\n"
-            f"<@&{GV_NOTIFY_ROLE_ID}>"
-        )
+        message = f"""# قـوانـيـن رول بـلاي 
 
-        for channel_id in target_channels:
+- بـسم الله الرحمن الرحيم توكلنا على الله 
 
-            channel = interaction.guild.get_channel(
-                channel_id
-            )
 
-            if not channel:
-                continue
+- الهوست: {interaction.user.mention}
 
-            try:
+- سرعه المسار الايمن 60 والايسر 65
 
-                message = await channel.send(text)
+- ممنوع الهروب من الاداره والهوست
 
-                # البوت يحط الصح والخطأ بنفسه
-                await message.add_reaction(YES_EMOJI)
-                await message.add_reaction(NO_EMOJI)
+- احترام قرارات هوست والاداره 
 
-            except discord.HTTPException:
-                pass
+- تخريبك يؤدي لعقوبتك
+
+- ممنوع استخدام  <#1532414397245296700> 
+
+- ممنوع وضع لوحات مميزه بدون تصريح
+
+- تواصل داخل رومين <#1532414490694385895> ورم صوتي
+
+- الاداره تتمنى لكم رول جميل وهادئ
+
+<@&1532414257772101812>
+
+<#1532414374789255419>"""
+
+        await channel.send(message)
 
         await interaction.response.send_message(
-            "تم إرسال التقييم وإضافة ✅ و ❌.",
+            "✅ تم إرسال بداية الرول في الروم الصحيح.",
             ephemeral=True
         )
 
-    # =====================================================
+    # =========================
     # قفلت الرول
-    # =====================================================
+    # =========================
 
     @discord.ui.button(
         label="قفلت الرول",
         style=discord.ButtonStyle.danger,
         custom_id="gv_close"
     )
-    async def close(
+    async def close_button(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
+        role = selected_roles.get(interaction.user.id)
 
-        channels = (
-            OWNER_CHANNEL_ID,
-            *PLAY_CHANNEL_IDS
-        )
-
-        for channel_id in channels:
-
-            channel = interaction.guild.get_channel(
-                channel_id
+        if role is None:
+            await interaction.response.send_message(
+                "❌ اختر رول أونر أو رول بلاي أولاً.",
+                ephemeral=True
             )
+            return
 
-            if not channel:
+        # حذف رسائل البوت القديمة من رومات الرول
+        for channel_id in [OWNER_CHANNEL_ID, PLAY_CHANNEL_ID]:
+            channel = interaction.guild.get_channel(channel_id)
+
+            if channel is None:
                 continue
 
             try:
-
-                async for message in channel.history(
-                    limit=100
-                ):
-
-                    if message.author.id == self.bot.user.id:
-
-                        await message.delete()
-
-            except discord.HTTPException:
+                async for message in channel.history(limit=100):
+                    if message.author == interaction.client.user:
+                        try:
+                            await message.delete()
+                        except:
+                            pass
+            except:
                 pass
 
+        if role == "owner":
+            channel_id = OWNER_CHANNEL_ID
+        else:
+            channel_id = PLAY_CHANNEL_ID
+
+        channel = interaction.guild.get_channel(channel_id)
+
+        if channel is None:
+            await interaction.response.send_message(
+                "❌ ما قدرت ألقى روم الرول.",
+                ephemeral=True
+            )
+            return
+
+        # التقييم - نفس الكلام الأصلي
+        evaluation = f"""# تقييم رول 🎮
+
+- الهوست: {interaction.user.mention}
+
+- اذا عجبك ✅ إذا لا ❌ ذكر سبب بشات العام 
+
+- ملاحظه 🔴
+
+- اذا متبلك ممنوع تصوت في حال تصويتك يحق للهوست رفع تذكره وتتم معاقبتك
+
+<@&1532414257772101812>"""
+
+        evaluation_message = await channel.send(evaluation)
+
+        # إضافة الإيموجيات تلقائيًا
+        try:
+            await evaluation_message.add_reaction("✅")
+            await evaluation_message.add_reaction("❌")
+        except:
+            pass
+
         await interaction.response.send_message(
-            "تم إغلاق الرول وحذف رسائل البوت المطلوبة.",
+            "✅ تم قفل الرول وإرسال التقييم.",
             ephemeral=True
         )
 
-    # =====================================================
+    # =========================
     # إرسال الكود
-    # =====================================================
+    # =========================
 
     @discord.ui.button(
         label="إرسال الكود",
         style=discord.ButtonStyle.secondary,
         custom_id="gv_code"
     )
-    async def code(
+    async def code_button(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
 
-        await interaction.response.send_modal(
-            CodeModal()
-        )
+        class CodeModal(discord.ui.Modal, title="إرسال الكود"):
 
-
-# =========================================================
-# CODE MODAL
-# =========================================================
-
-class CodeModal(
-    discord.ui.Modal,
-    title="إرسال الكود"
-):
-
-    code = discord.ui.TextInput(
-        label="الكود",
-        placeholder="اكتب الكود هنا",
-        required=True,
-        max_length=100
-    )
-
-    async def on_submit(
-        self,
-        interaction: discord.Interaction
-    ):
-
-        channel = interaction.guild.get_channel(
-            CODE_CHANNEL_ID
-        )
-
-        if channel:
-
-            await channel.send(
-                "# كود الرول حاليا هو :\n\n"
-                f"`{self.code.value}`\n\n"
-                "# يرجى كتابة اسمك أدناه لتتجنب البلوك !"
+            code = discord.ui.TextInput(
+                label="الكود",
+                placeholder="اكتب الكود هنا",
+                required=True
             )
 
-        await interaction.response.send_message(
-            "تم إرسال الكود.",
-            ephemeral=True
-        )
+            async def on_submit(
+                self,
+                modal_interaction: discord.Interaction
+            ):
+                channel = modal_interaction.guild.get_channel(
+                    CODE_CHANNEL_ID
+                )
+
+                if channel is None:
+                    await modal_interaction.response.send_message(
+                        "❌ ما قدرت ألقى روم الأكواد.",
+                        ephemeral=True
+                    )
+                    return
+
+                await channel.send(
+                    f"""# كود الرول حاليا هو : 
 
 
-# =========================================================
-# COG
-# =========================================================
+
+
+{self.code.value}
+
+
+
+
+# يرجى كتابة اسمك أدناه لتتجنب البلوك !"""
+                )
+
+                await modal_interaction.response.send_message(
+                    "✅ تم إرسال الكود.",
+                    ephemeral=True
+                )
+
+        await interaction.response.send_modal(CodeModal())
+
+
+# =========================
+# Cog
+# =========================
 
 class GvRoles(commands.Cog):
 
@@ -438,53 +326,16 @@ class GvRoles(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
 
-        channel = self.bot.get_channel(
-            PANEL_CHANNEL_ID
-        )
+        self.bot.add_view(GvView())
 
-        if not channel:
+        channel = self.bot.get_channel(PANEL_CHANNEL_ID)
+
+        if channel is None:
+            print("❌ PANEL CHANNEL NOT FOUND")
             return
 
-        found = False
+        print("✅ GV ROLES READY")
 
-        try:
-
-            async for message in channel.history(
-                limit=100
-            ):
-
-                if (
-                    message.author.id == self.bot.user.id
-                    and message.components
-                ):
-                    found = True
-                    break
-
-        except discord.HTTPException:
-            return
-
-        if not found:
-
-            embed = discord.Embed(
-                title="رول gv"
-            )
-
-            await channel.send(
-                embed=embed,
-                view=GvView(self.bot)
-            )
-
-
-# =========================================================
-# SETUP
-# =========================================================
 
 async def setup(bot):
-
-    bot.add_view(
-        GvView(bot)
-    )
-
-    await bot.add_cog(
-        GvRoles(bot)
-        )
+    await bot.add_cog(GvRoles(bot))
