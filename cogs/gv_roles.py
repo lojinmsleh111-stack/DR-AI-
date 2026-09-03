@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 
@@ -8,29 +7,23 @@ from discord.ext import commands
 # =========================================================
 
 PANEL_CHANNEL_ID = 1543715791558414336
-
 OWNER_CHANNEL_ID = 1532414484151402586
-
 PLAY_CHANNEL_ID = 1532414474437394482
-
 CODE_CHANNEL_ID = 1532414489561927843
 
 
 # =========================================================
-# OTHER IDS USED IN THE MESSAGES
+# IDS USED IN MESSAGES
 # =========================================================
 
 ROLE_ID = 1532414257772101812
-
 NO_USE_CHANNEL_ID = 1532414397245296700
-
 HOST_CHAT_CHANNEL_ID = 1532414490694385895
-
 RULES_CHANNEL_ID = 1532414374789255419
 
 
 # =========================================================
-# USER ROLE SELECTION
+# USER SELECTION
 # =========================================================
 
 selected_roles = {}
@@ -46,7 +39,7 @@ class GvView(discord.ui.View):
         super().__init__(timeout=None)
 
     # =====================================================
-    # رول اونري
+    # رول اونر
     # =====================================================
 
     @discord.ui.button(
@@ -90,6 +83,7 @@ class GvView(discord.ui.View):
             "✅ تم إرسال الرول في روم رول أونري.",
             ephemeral=True
         )
+
 
     # =====================================================
     # رول بلاي GV
@@ -136,6 +130,7 @@ class GvView(discord.ui.View):
             "✅ تم إرسال الرول في روم رول بلاي.",
             ephemeral=True
         )
+
 
     # =====================================================
     # بداية الرول
@@ -213,6 +208,7 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
+
     # =====================================================
     # قفلت الرول
     # =====================================================
@@ -275,7 +271,6 @@ class GvView(discord.ui.View):
             evaluation_message
         )
 
-        # إضافة الإيموجيات تلقائيًا
         try:
             await message.add_reaction("✅")
             await message.add_reaction("❌")
@@ -286,6 +281,7 @@ class GvView(discord.ui.View):
             "✅ تم قفل الرول وإرسال التقييم.",
             ephemeral=True
         )
+
 
     # =====================================================
     # إرسال الكود
@@ -361,68 +357,6 @@ class GvRoles(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.view_added = False
-        self.panel_checked = False
-
-    # =====================================================
-    # READY
-    # =====================================================
-
-    @commands.Cog.listener()
-    async def on_ready(self):
-
-        # تسجيل الأزرار مرة واحدة فقط
-        if not self.view_added:
-            self.bot.add_view(GvView())
-            self.view_added = True
-
-        # منع فحص/إرسال البانل كل مرة
-        if self.panel_checked:
-            return
-
-        self.panel_checked = True
-
-        channel = self.bot.get_channel(
-            PANEL_CHANNEL_ID
-        )
-
-        if channel is None:
-            print("❌ PANEL CHANNEL NOT FOUND")
-            return
-
-        # =================================================
-        # البحث عن بانل موجود مسبقًا
-        # =================================================
-
-        async for message in channel.history(limit=100):
-
-            if (
-                message.author == self.bot.user
-                and message.components
-            ):
-                for row in message.components:
-                    for component in row.children:
-
-                        if component.custom_id == "gv_role_owner":
-                            print("✅ GV PANEL ALREADY EXISTS")
-                            return
-
-        # =================================================
-        # إرسال بانل واحد فقط
-        # =================================================
-
-        embed = discord.Embed(
-            title="رول بـلاي 🎮",
-            description="اختار نوع الرول من الأزرار بالأسفل.",
-            color=discord.Color.blue()
-        )
-
-        await channel.send(
-            embed=embed,
-            view=GvView()
-        )
-
-        print("✅ GV PANEL SENT")
 
 
 # =========================================================
@@ -430,4 +364,10 @@ class GvRoles(commands.Cog):
 # =========================================================
 
 async def setup(bot):
+
+    # تسجيل الـ View مرة واحدة فقط
+    bot.add_view(GvView())
+
     await bot.add_cog(GvRoles(bot))
+
+    print("✅ GV ROLES LOADED")
