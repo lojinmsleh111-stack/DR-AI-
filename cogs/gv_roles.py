@@ -23,7 +23,7 @@ RULES_CHANNEL_ID = 1532414374789255419
 
 
 # =========================================================
-# USER SELECTION
+# USER ROLE SELECTION
 # =========================================================
 
 selected_roles = {}
@@ -39,7 +39,7 @@ class GvView(discord.ui.View):
         super().__init__(timeout=None)
 
     # =====================================================
-    # رول اونر
+    # رول اونري
     # =====================================================
 
     @discord.ui.button(
@@ -47,11 +47,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="gv_role_owner"
     )
-    async def owner_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
+    async def owner_button(self, interaction, button):
 
         selected_roles[interaction.user.id] = "owner"
 
@@ -84,7 +80,6 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
-
     # =====================================================
     # رول بلاي GV
     # =====================================================
@@ -94,11 +89,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="gv_role_play"
     )
-    async def play_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
+    async def play_button(self, interaction, button):
 
         selected_roles[interaction.user.id] = "play"
 
@@ -131,7 +122,6 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
-
     # =====================================================
     # بداية الرول
     # =====================================================
@@ -141,11 +131,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.success,
         custom_id="gv_role_start"
     )
-    async def start_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
+    async def start_button(self, interaction, button):
 
         selected_role = selected_roles.get(
             interaction.user.id
@@ -158,10 +144,11 @@ class GvView(discord.ui.View):
             )
             return
 
-        if selected_role == "owner":
-            channel_id = OWNER_CHANNEL_ID
-        else:
-            channel_id = PLAY_CHANNEL_ID
+        channel_id = (
+            OWNER_CHANNEL_ID
+            if selected_role == "owner"
+            else PLAY_CHANNEL_ID
+        )
 
         channel = interaction.guild.get_channel(
             channel_id
@@ -208,9 +195,8 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
-
     # =====================================================
-    # قفلت الرول
+    # قفلت الرول + التقييم
     # =====================================================
 
     @discord.ui.button(
@@ -218,11 +204,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.danger,
         custom_id="gv_role_close"
     )
-    async def close_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
+    async def close_button(self, interaction, button):
 
         selected_role = selected_roles.get(
             interaction.user.id
@@ -235,10 +217,11 @@ class GvView(discord.ui.View):
             )
             return
 
-        if selected_role == "owner":
-            channel_id = OWNER_CHANNEL_ID
-        else:
-            channel_id = PLAY_CHANNEL_ID
+        channel_id = (
+            OWNER_CHANNEL_ID
+            if selected_role == "owner"
+            else PLAY_CHANNEL_ID
+        )
 
         channel = interaction.guild.get_channel(
             channel_id
@@ -255,6 +238,10 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
+        # =================================================
+        # نص التقييم
+        # =================================================
+
         evaluation_message = f"""# تقييم رول 🎮
 
 - الهوست: {interaction.user.mention}
@@ -267,21 +254,22 @@ class GvView(discord.ui.View):
 
 <@&1532414257772101812>"""
 
+        # إرسال التقييم
         message = await channel.send(
             evaluation_message
         )
 
-        try:
-            await message.add_reaction("✅")
-            await message.add_reaction("❌")
-        except discord.HTTPException:
-            pass
+        # =================================================
+        # إضافة إيموجيات التصويت تلقائيًا
+        # =================================================
+
+        await message.add_reaction("✅")
+        await message.add_reaction("❌")
 
         await interaction.followup.send(
-            "✅ تم قفل الرول وإرسال التقييم.",
+            "✅ تم قفل الرول وإرسال التقييم مع إيموجيات التصويت.",
             ephemeral=True
         )
-
 
     # =====================================================
     # إرسال الكود
@@ -292,11 +280,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.secondary,
         custom_id="gv_role_code"
     )
-    async def code_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
+    async def code_button(self, interaction, button):
 
         class CodeModal(
             discord.ui.Modal,
@@ -309,10 +293,7 @@ class GvView(discord.ui.View):
                 required=True
             )
 
-            async def on_submit(
-                self,
-                modal_interaction: discord.Interaction
-            ):
+            async def on_submit(self, modal_interaction):
 
                 channel = modal_interaction.guild.get_channel(
                     CODE_CHANNEL_ID
