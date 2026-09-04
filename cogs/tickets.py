@@ -755,7 +755,7 @@ class Tickets(commands.Cog):
     # فحص المخالفات المتأخرة
     # =====================================================
 
-    @tasks.loop(hours=1)
+  @tasks.loop(hours=1)
     async def check_overdue_tickets(self):
 
         try:
@@ -775,7 +775,7 @@ class Tickets(commands.Cog):
 
                 has_overdue = False
 
-   for ticket in tickets:
+                for ticket in tickets:
 
                     if ticket.get("paid", False):
                         continue
@@ -867,4 +867,4 @@ async def setup(bot):
     # مهم حتى تشتغل الأزرار القديمة بعد إعادة تشغيل البوت
     bot.add_dynamic_items(
         ViolationStatusButton
-)
+    )
