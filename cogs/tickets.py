@@ -1,24 +1,12 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-
 import json
 import os
 import logging
 from datetime import datetime, timedelta
 
-
-logger = logging.getLogger("bot")
-
-
-# =========================================================
-# IDs - DR-AI
-# =========================================================
-
-USERS_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "users.json"
-)
+log = logging.getLogger("bot")
 
 TICKET_ALLOWED_CHANNEL_ID = 1532414607577055465
 PAYMENT_OFFICER_ROLE_ID = 1532414219843276820
@@ -26,153 +14,103 @@ STAFF_ROLE_ID = 1532414219843276820
 OVERDUE_ROLE_ID = 1533068412547497984
 GUILD_ID = 1532390688187220159
 
-
-# =========================================================
-# Emojis
-# =========================================================
-
 PAID_EMOJI_ID = 1537811911054196877
 UNPAID_EMOJI_ID = 1537811948027117599
 
-
-# =========================================================
-# Users JSON
-# =========================================================
-
-def load_users() -> dict:
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"USERS LOAD ERROR: {e}")
-
-    return {}
+USERS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "users.json"
+)
 
 
-def save_users(data: dict):
+def load_users():
+    try:
+        if not os.path.exists(USERS_FILE):
+            return {}
+
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    except Exception:
+        log.exception("Failed to load users.json")
+        return {}
+
+
+def save_users(data):
     try:
         with open(USERS_FILE, "w", encoding="utf-8") as f:
             json.dump(
                 data,
                 f,
                 ensure_ascii=False,
-                indent=2
+                indent=4
             )
-    except Exception as e:
-        logger.error(f"USERS SAVE ERROR: {e}")
+
+    except Exception:
+        log.exception("Failed to save users.json")
 
 
-# =========================================================
-# Get Custom Emoji
-# =========================================================
-
-async def get_custom_emoji(
-    guild: discord.Guild,
-    emoji_id: int
-):
+def get_custom_emoji(guild: discord.Guild, emoji_id: int):
     emoji = guild.get_emoji(emoji_id)
 
     if emoji:
-        return emoji
+        return str(emoji)
 
-    try:
-        return await guild.fetch_emoji(emoji_id)
-    except (
-        discord.NotFound,
-        discord.Forbidden,
-        discord.HTTPException
-    ):
-        return None
+    return ""
 
-
-# =========================================================
-# Update Violation Status
-# =========================================================
 
 async def update_violation_status(
-    interaction: discord.Interaction,
-    message_id: int,
-    emoji_id: int
+    message: discord.Message,
+    status: str
 ):
+    guild = message.guild
+
+    if guild is None:
+        return
+
+    paid_emoji = get_custom_emoji(
+        guild,
+        PAID_EMOJI_ID
+    )
+
+    unpaid_emoji = get_custom_emoji(
+        guild,
+        UNPAID_EMOJI_ID
+    )
+
     try:
-        guild = interaction.guild
 
-        if guild is None:
-            return False
+        if status == "paid":
 
-        channel = guild.get_channel(
-            TICKET_ALLOWED_CHANNEL_ID
-        )
-
-        if channel is None:
-            try:
-                channel = await interaction.client.fetch_channel(
-                    TICKET_ALLOWED_CHANNEL_ID
-                )
-            except Exception:
-                return False
-
-        if not isinstance(channel, discord.TextChannel):
-            return False
-
-        try:
-            message = await channel.fetch_message(
-                message_id
-            )
-        except Exception:
-            return False
-
-        bot_user = guild.me
-
-        # إزالة إيموجي الحالة القديم
-        for reaction in list(message.reactions):
-
-            if not isinstance(
-                reaction.emoji,
-                discord.Emoji
-            ):
-                continue
-
-            if reaction.emoji.id not in (
-                PAID_EMOJI_ID,
-                UNPAID_EMOJI_ID
-            ):
-                continue
-
-            try:
+            if unpaid_emoji:
                 await message.remove_reaction(
-                    reaction.emoji,
-                    bot_user
+                    unpaid_emoji,
+                    guild.me
                 )
-            except Exception:
-                pass
 
-        # جلب الإيموجي الجديد
-        emoji = await get_custom_emoji(
-            guild,
-            emoji_id
+            if paid_emoji:
+                await message.add_reaction(
+                    paid_emoji
+                )
+
+        else:
+
+            if paid_emoji:
+                await message.remove_reaction(
+                    paid_emoji,
+                    guild.me
+                )
+
+            if unpaid_emoji:
+                await message.add_reaction(
+                    unpaid_emoji
+                )
+
+    except Exception:
+        log.exception(
+            "Failed to update violation status"
         )
 
-        if emoji is None:
-            return False
-
-        await message.add_reaction(
-            emoji
-        )
-
-        return True
-
-    except Exception as e:
-        logger.error(
-            f"ERROR UPDATING VIOLATION STATUS: {e}"
-        )
-        return False
-
-
-# =========================================================
-# Violation Status Button
-# =========================================================
 
 class ViolationStatusButton(
     discord.ui.DynamicItem[discord.ui.Button],
@@ -184,208 +122,137 @@ class ViolationStatusButton(
         status: str,
         message_id: int
     ):
+
         self.status = status
         self.message_id = message_id
 
         if status == "paid":
+
             label = "تم السداد"
             style = discord.ButtonStyle.success
+
         else:
+
             label = "لم يتم السداد"
             style = discord.ButtonStyle.danger
 
-        super().__init__(
-            discord.ui.Button(
-                label=label,
-                style=style,
-                custom_id=(
-                    f"violation_status:"
-                    f"{status}:"
-                    f"{message_id}"
-                )
+        button = discord.ui.Button(
+            label=label,
+            style=style,
+            custom_id=(
+                f"violation_status:"
+                f"{status}:"
+                f"{message_id}"
             )
         )
+
+        super().__init__(button)
 
     @classmethod
     async def from_custom_id(
         cls,
         interaction: discord.Interaction,
         item: discord.ui.Item,
-        match,
-        /
+        match
     ):
+
+        status = match["status"]
+        message_id = int(
+            match["message_id"]
+        )
+
         return cls(
-            match["status"],
-            int(match["message_id"])
+            status,
+            message_id
         )
 
     async def callback(
         self,
         interaction: discord.Interaction
     ):
-        await interaction.response.defer(
-            ephemeral=True
-        )
 
         if interaction.guild is None:
-            return await interaction.followup.send(
-                "❌ هذا الزر يعمل داخل السيرفر فقط.",
+
+            await interaction.response.send_message(
+                "هذا الأمر داخل السيرفر فقط.",
                 ephemeral=True
             )
 
-        # =====================================================
-        # صلاحية الضابط
-        # =====================================================
+            return
 
-        officer_role = interaction.guild.get_role(
-            PAYMENT_OFFICER_ROLE_ID
-        )
+        member = interaction.user
 
-        if (
-            officer_role not in interaction.user.roles
-            and not interaction.user.guild_permissions.administrator
+        if not isinstance(
+            member,
+            discord.Member
         ):
-            return await interaction.followup.send(
-                "❌ هذا الزر مخصص للضباط المصرح لهم فقط!",
+
+            await interaction.response.send_message(
+                "تعذر التحقق من رتبتك.",
                 ephemeral=True
             )
 
-        # =====================================================
-        # البحث عن المخالفة
-        # =====================================================
+            return
+
+        allowed_roles = {
+            PAYMENT_OFFICER_ROLE_ID,
+            STAFF_ROLE_ID
+        }
+
+        if not any(
+            role.id in allowed_roles
+            for role in member.roles
+        ):
+
+            await interaction.response.send_message(
+                "❌ ليس لديك صلاحية لتغيير حالة المخالفة.",
+                ephemeral=True
+            )
+
+            return
+
+        try:
+
+            message = await interaction.channel.fetch_message(
+                self.message_id
+            )
+
+        except Exception:
+
+            await interaction.response.send_message(
+                "❌ لم أستطع العثور على رسالة المخالفة.",
+                ephemeral=True
+            )
+
+            return
+
+        await update_violation_status(
+            message,
+            self.status
+        )
 
         users = load_users()
 
-        found_ticket = None
+        for user_data in users.values():
 
-        for user_id, data in users.items():
-
-            tickets = data.get(
-                "tickets",
+            for violation in user_data.get(
+                "violations",
                 []
-            )
+            ):
 
-            for index, ticket in enumerate(tickets):
+                if violation.get(
+                    "message_id"
+                ) == self.message_id:
 
-                if str(
-                    ticket.get("message_id")
-                ) == str(
-                    self.message_id
-                ):
-                    found_ticket = (
-                        user_id,
-                        index,
-                        ticket
-                    )
-                    break
-
-            if found_ticket:
-                break
-
-        if found_ticket is None:
-            return await interaction.followup.send(
-                "❌ لم يتم العثور على سجل المخالفة!",
-                ephemeral=True
-            )
-
-        user_id, ticket_index, ticket = found_ticket
-
-        # =====================================================
-        # تحديث حالة السداد
-        # =====================================================
-
-        if self.status == "paid":
-            ticket["paid"] = True
-        else:
-            ticket["paid"] = False
+                    violation["status"] = self.status
 
         save_users(users)
 
-        # =====================================================
-        # تحديث الإيموجي
-        # =====================================================
-
-        emoji_id = (
-            PAID_EMOJI_ID
-            if self.status == "paid"
-            else UNPAID_EMOJI_ID
+        await interaction.response.send_message(
+            "✅ تم تحديث حالة المخالفة.",
+            ephemeral=True
         )
 
-        updated = await update_violation_status(
-            interaction,
-            self.message_id,
-            emoji_id
-        )
-
-        if not updated:
-            return await interaction.followup.send(
-                "⚠️ تم تحديث حالة المخالفة، لكن تعذر تحديث الإيموجي في الرسالة الأصلية.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # تم السداد
-        # =====================================================
-
-        if self.status == "paid":
-
-            await interaction.followup.send(
-                "✅ تم تسجيل المخالفة كـ **تم السداد** وتحديث الإيموجي.",
-                ephemeral=True
-            )
-
-            member = interaction.guild.get_member(
-                int(user_id)
-            )
-
-            if member:
-
-                all_paid = all(
-                    t.get("paid", False)
-                    for t in users[user_id].get(
-                        "tickets",
-                        []
-                    )
-                )
-
-                if all_paid:
-
-                    overdue_role = interaction.guild.get_role(
-                        OVERDUE_ROLE_ID
-                    )
-
-                    if (
-                        overdue_role
-                        and overdue_role in member.roles
-                    ):
-                        try:
-
-                            await member.remove_roles(
-                                overdue_role
-                            )
-
-                            await interaction.channel.send(
-                                f"🟢 **تحديث:** تم رفع إيقاف الخدمات عن المواطن {member.mention}"
-                            )
-
-                        except Exception:
-                            pass
-
-        # =====================================================
-        # لم يتم السداد
-        # =====================================================
-
-        else:
-
-            await interaction.followup.send(
-                "🔴 تم تسجيل المخالفة كـ **لم يتم السداد** وتحديث الإيموجي.",
-                ephemeral=True
-            )
-
-
-# =========================================================
-# Violation View
-# =========================================================
 
 class ViolationView(discord.ui.View):
 
@@ -393,6 +260,7 @@ class ViolationView(discord.ui.View):
         self,
         message_id: int
     ):
+
         super().__init__(
             timeout=None
         )
@@ -412,164 +280,75 @@ class ViolationView(discord.ui.View):
         )
 
 
-# =========================================================
-# Tickets Cog
-# =========================================================
-
 class Tickets(commands.Cog):
 
     def __init__(
         self,
-        bot
+        bot: commands.Bot
     ):
+
         self.bot = bot
 
         self.check_overdue_tickets.start()
 
     def cog_unload(self):
-        self.check_overdue_tickets.cancel()
 
-    # =====================================================
-    # /مخالفة
-    # =====================================================
+        self.check_overdue_tickets.cancel()
 
     @app_commands.command(
         name="مخالفة",
-        description="إصدار مخالفة"
+        description="إصدار مخالفة عسكرية"
     )
     @app_commands.describe(
-        target="المخالف",
+        target="الشخص المخالف",
         reason="سبب المخالفة",
         amount="مبلغ المخالفة",
         plate="رقم اللوحة",
-        proof="الدليل - صورة"
+        proof="الدليل"
     )
-    async def make_ticket(
+    async def violation(
         self,
         interaction: discord.Interaction,
         target: discord.Member,
         reason: str,
-        amount: int,
+        amount: str,
         plate: str,
         proof: discord.Attachment
     ):
 
+        if interaction.guild is None:
+
+            await interaction.response.send_message(
+                "هذا الأمر داخل السيرفر فقط.",
+                ephemeral=True
+            )
+
+            return
+
+        if interaction.channel_id != TICKET_ALLOWED_CHANNEL_ID:
+
+            await interaction.response.send_message(
+                "❌ لا يمكنك استخدام الأمر هنا.",
+                ephemeral=True
+            )
+
+            return
+
+        if (
+            proof.content_type
+            and not proof.content_type.startswith("image/")
+        ):
+
+            await interaction.response.send_message(
+                "❌ يجب أن يكون الدليل صورة.",
+                ephemeral=True
+            )
+
+            return
+
         await interaction.response.defer(
             ephemeral=True
         )
-
-        # =====================================================
-        # السيرفر
-        # =====================================================
-
-        if interaction.guild is None:
-            return await interaction.followup.send(
-                "❌ هذا الأمر يعمل داخل السيرفر فقط.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # الروم المسموح
-        # =====================================================
-
-        if interaction.channel_id != TICKET_ALLOWED_CHANNEL_ID:
-            return await interaction.followup.send(
-                "❌ لا يمكنك استخدام أمر المخالفة في هذا الروم.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # صلاحية إصدار المخالفة
-        # =====================================================
-
-        staff_role = interaction.guild.get_role(
-            STAFF_ROLE_ID
-        )
-
-        if (
-            staff_role not in interaction.user.roles
-            and not interaction.user.guild_permissions.administrator
-        ):
-            return await interaction.followup.send(
-                "❌ ليس لديك صلاحية إصدار المخالفات.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # التحقق من المبلغ
-        # =====================================================
-
-        if amount <= 0:
-            return await interaction.followup.send(
-                "❌ يجب أن يكون مبلغ المخالفة أكبر من 0.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # التحقق من الدليل
-        # =====================================================
-
-        if (
-            proof.content_type is None
-            or not proof.content_type.startswith("image/")
-        ):
-            return await interaction.followup.send(
-                "❌ الدليل يجب أن يكون صورة.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # تحميل بيانات المستخدم
-        # =====================================================
-
-        users = load_users()
-
-        user_key = str(
-            target.id
-        )
-
-        if user_key not in users:
-
-            users[user_key] = {
-                "discord_tag": str(target),
-                "real_name": target.display_name,
-                "rp_id": "غير مسجل",
-                "tickets": [],
-                "permits": []
-            }
-
-        if "tickets" not in users[user_key]:
-            users[user_key]["tickets"] = []
-
-        # =====================================================
-        # بيانات المخالفة
-        # =====================================================
-
-        ticket_data = {
-            "amount": amount,
-            "reason": reason,
-            "plate": plate,
-            "issuer": interaction.user.display_name,
-            "issuer_id": interaction.user.id,
-            "issued_at": datetime.now().isoformat(),
-            "paid": False,
-            "proof_url": proof.url,
-            "message_id": None
-        }
-
-        users[user_key]["tickets"].append(
-            ticket_data
-        )
-
-        ticket_index = len(
-            users[user_key]["tickets"]
-        ) - 1
-
-        save_users(users)
-
-        # =====================================================
-        # نموذج المخالفة
-        # =====================================================
 
         violation_text = (
             "**__تم اصدار مخالفه\n\n"
@@ -584,154 +363,112 @@ class Tickets(commands.Cog):
             "__**"
         )
 
-        # =====================================================
-        # إرسال المخالفة
-        # =====================================================
-
         try:
 
-            traffic_channel = interaction.guild.get_channel(
-                TICKET_ALLOWED_CHANNEL_ID
+            # إرسال رسالة المخالفة
+            violation_message = await interaction.channel.send(
+                violation_text
             )
 
-            if traffic_channel is None:
-                traffic_channel = await self.bot.fetch_channel(
-                    TICKET_ALLOWED_CHANNEL_ID
-                )
+            # إضافة حالة غير مسدد
+            await update_violation_status(
+                violation_message,
+                "unpaid"
+            )
 
-            if not isinstance(
-                traffic_channel,
-                discord.TextChannel
-            ):
-                raise RuntimeError(
-                    "Traffic channel is not a TextChannel"
-                )
+            # إنشاء الثريد على نفس رسالة المخالفة
+            thread = await violation_message.create_thread(
+                name=f"مخالفة - {target.display_name}",
+                auto_archive_duration=1440,
+                reason="إنشاء ثريد المخالفة"
+            )
 
-            message = await traffic_channel.send(
-                content=violation_text,
-                allowed_mentions=discord.AllowedMentions(
-                    users=True
+            # إرسال الأزرار داخل الثريد
+            await thread.send(
+                view=ViolationView(
+                    violation_message.id
                 )
             )
 
-        except Exception as e:
+            # حفظ البيانات
+            users = load_users()
 
-            logger.error(
-                f"VIOLATION SEND ERROR: {e}"
-            )
+            user_id = str(target.id)
 
-            try:
-                users[user_key]["tickets"].pop(
-                    ticket_index
-                )
-                save_users(users)
-            except Exception:
-                pass
+            if user_id not in users:
+                users[user_id] = {}
 
-            return await interaction.followup.send(
-                "❌ حدث خطأ أثناء إرسال المخالفة.",
-                ephemeral=True
-            )
+            if "violations" not in users[user_id]:
+                users[user_id]["violations"] = []
 
-        # =====================================================
-        # حفظ Message ID
-        # =====================================================
+            users[user_id]["violations"].append({
 
-        users = load_users()
+                "message_id": violation_message.id,
 
-        try:
+                "thread_id": thread.id,
 
-            users[user_key]["tickets"][
-                ticket_index
-            ]["message_id"] = message.id
+                "guild_id": interaction.guild.id,
+
+                "channel_id": interaction.channel_id,
+
+                "military_id": interaction.user.id,
+
+                "target_id": target.id,
+
+                "reason": reason,
+
+                "amount": amount,
+
+                "plate": plate,
+
+                "proof": proof.url,
+
+                "status": "unpaid",
+
+                "created_at": datetime.utcnow().isoformat(),
+
+                "due_at": (
+                    datetime.utcnow()
+                    + timedelta(days=7)
+                ).isoformat()
+
+            })
 
             save_users(users)
 
-        except Exception as e:
-
-            logger.error(
-                f"JSON MESSAGE ID ERROR: {e}"
-            )
-
-        # =====================================================
-        # إضافة إيموجي لم يتم السداد
-        # =====================================================
-
-        unpaid_emoji = await get_custom_emoji(
-            interaction.guild,
-            UNPAID_EMOJI_ID
-        )
-
-        if unpaid_emoji:
-
+            # إرسال رسالة خاصة للمخالف
             try:
 
-                await message.add_reaction(
-                    unpaid_emoji
+                await target.send(
+                    "🚨 تم إصدار مخالفة عليك في السيرفر.\n\n"
+                    f"**سبب المخالفة:** {reason}\n"
+                    f"**مبلغ المخالفة:** {amount}\n"
+                    f"**اللوحة:** {plate}\n"
+                    f"**الدليل:** {proof.url}"
                 )
 
-            except Exception as e:
+            except Exception:
 
-                logger.error(
-                    f"UNPAID REACTION ERROR: {e}"
+                log.info(
+                    "Could not DM user %s about violation.",
+                    target.id
                 )
 
-        # =====================================================
-        # إنشاء Thread
-        # =====================================================
-
-        try:
-
-            thread = await message.create_thread(
-                name=f"مخالفة - {target.display_name}"
+            await interaction.followup.send(
+                "✅ تم إصدار المخالفة بنجاح.",
+                ephemeral=True
             )
 
-            await thread.send(
-                content="حالة السداد:",
-                view=ViolationView(
-                    message.id
-                )
+        except Exception:
+
+            log.exception(
+                "Failed to issue violation"
             )
 
-        except Exception as e:
-
-            logger.error(
-                f"THREAD ERROR: {e}"
+            await interaction.followup.send(
+                "❌ حدث خطأ أثناء إصدار المخالفة.",
+                ephemeral=True
             )
-
-        # =====================================================
-        # إرسال المخالفة للخاص
-        # =====================================================
-
-        try:
-
-            await target.send(
-                content=violation_text,
-                allowed_mentions=discord.AllowedMentions(
-                    users=False
-                )
-            )
-
-            dm_status = "وتم إرسالها للخاص."
-
-        except (
-            discord.Forbidden,
-            discord.HTTPException
-        ):
-
-            dm_status = (
-                "لكن تعذر إرسالها للخاص "
-                "(قد تكون الرسائل الخاصة مقفلة)."
-            )
-
-        # =====================================================
-        # تأكيد الإصدار
-        # =====================================================
-
-        await interaction.followup.send(
-            f"✅ تم إصدار المخالفة بنجاح.\n{dm_status}",
-            ephemeral=True
-        )
 
     # =====================================================
     # فحص المخالفات المتأخرة
@@ -740,57 +477,58 @@ class Tickets(commands.Cog):
     @tasks.loop(hours=1)
     async def check_overdue_tickets(self):
 
-        try:
+        users = load_users()
 
-            users = load_users()
+        changed = False
 
-            now = datetime.now()
+        now = datetime.utcnow()
 
-            for user_id, data in users.items():
+        for user_id, user_data in users.items():
 
-                tickets = data.get(
-                    "tickets",
-                    []
+            violations = user_data.get(
+                "violations",
+                []
+            )
+
+            for violation in violations:
+
+                if violation.get(
+                    "status"
+                ) == "paid":
+
+                    continue
+
+                due_at = violation.get(
+                    "due_at"
                 )
 
-                has_overdue = False
+                if not due_at:
+                    continue
 
-                for ticket in tickets:
+                try:
 
-                    if ticket.get(
-                        "paid",
-                        False
-                    ):
-                        continue
+                    due_date = datetime.fromisoformat(
+                        due_at
+                    )
 
-                    issued_at = ticket.get(
-                        "issued_at"
-         )
+                except Exception:
 
-                    if not issued_at:
-                        continue
+                    continue
 
-                    try:
+                if now < due_date:
+                    continue
 
-                        issued_date = datetime.fromisoformat(
-                            issued_at
-                        )
+                if violation.get(
+                    "overdue_handled"
+                ):
 
-                    except Exception:
-                        continue
-
-                    if (
-                        now - issued_date
-                        >= timedelta(days=7)
-                    ):
-                        has_overdue = True
-                        break
-
-                if not has_overdue:
                     continue
 
                 guild = self.bot.get_guild(
-                    GUILD_ID
+                    violation.get(
+                        "guild_id",
+                        GUILD_ID
+                    )
                 )
 
                 if guild is None:
@@ -800,54 +538,53 @@ class Tickets(commands.Cog):
                     int(user_id)
                 )
 
-                if member is None:
-                    continue
+                if member is not None:
 
-                overdue_role = guild.get_role(
-                    OVERDUE_ROLE_ID
-                )
+                    role = guild.get_role(
+                        OVERDUE_ROLE_ID
+                    )
 
-                if (
-                    overdue_role
-                    and overdue_role not in member.roles
-                ):
+                    if role is not None:
 
-                    try:
+                        try:
 
-                        await member.add_roles(
-                            overdue_role,
-                            reason="مخالفة غير مسددة لمدة 7 أيام"
-                        )
+                            await member.add_roles(
+                                role,
+                                reason="مخالفة متأخرة وغير مسددة"
+                            )
 
-                    except Exception as e:
+                        except Exception:
 
-                        logger.error(
-                            f"OVERDUE ROLE ERROR: {e}"
-                        )
+                            log.exception(
+                                "Failed to add overdue role to %s",
+                                user_id
+                            )
 
-        except Exception as e:
+                violation[
+                    "overdue_handled"
+                ] = True
 
-            logger.error(
-                f"OVERDUE CHECK ERROR: {e}"
-            )
+                changed = True
+
+        if changed:
+            save_users(users)
 
     @check_overdue_tickets.before_loop
-    async def before_overdue_check(self):
+    async def before_check_overdue_tickets(
+        self
+    ):
 
         await self.bot.wait_until_ready()
 
 
-# =========================================================
-# Setup
-# =========================================================
+async def setup(
+    bot: commands.Bot
+):
 
-async def setup(bot):
-
-    await bot.add_cog(
-        Tickets(bot)
-    )
-
-    # تسجيل Dynamic Buttons
     bot.add_dynamic_items(
         ViolationStatusButton
     )
+
+    await bot.add_cog(
+        Tickets(bot)
+            )
