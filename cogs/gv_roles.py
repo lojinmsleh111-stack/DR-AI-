@@ -298,6 +298,7 @@ class GvView(discord.ui.View):
 
 
 # يرجى كتابة اسمك أدناه لتتجنب البلوك !"""
+                    <@1532414257772101812>
                 )
 
                 await modal_interaction.response.send_message(
