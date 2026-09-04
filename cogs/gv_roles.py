@@ -294,11 +294,9 @@ class GvView(discord.ui.View):
 
 {self.code.value}
 
-
-
+<@1532414257772101812>
 
 # يرجى كتابة اسمك أدناه لتتجنب البلوك !"""
-<@1532414257772101812>
                 )
 
                 await modal_interaction.response.send_message(
