@@ -1,395 +1,341 @@
+import asyncio
 import discord
-from discord import app_commands
 from discord.ext import commands
 
-from utils.config import VIOLATION_CHANNEL_ID
+
+# =========================================================
+# IDS
+# =========================================================
+
+PANEL_CHANNEL_ID = 1543715791558414336
+OWNER_CHANNEL_ID = 1532414484151402586
+PLAY_CHANNEL_ID = 1532414474437394482
+CODE_CHANNEL_ID = 1532414489561927843
+
+ROLE_ID = 1532414257772101812
+NO_USE_CHANNEL_ID = 1532414397245296700
+HOST_CHAT_CHANNEL_ID = 1532414490694385895
+RULES_CHANNEL_ID = 1532414374789255419
 
 
 # =========================================================
-# إيموجيات حالة المخالفة
+# ROLE SELECTION
 # =========================================================
 
-UNPAID_EMOJI = "<:r_x:1540563530934390866>"
-PAID_EMOJI = "<:r_tick:1538664119136161823>"
-
-
-# =========================================================
-# نموذج المخالفة
-# =========================================================
-
-def create_violation_text(
-    military: discord.Member,
-    violator: discord.Member,
-    reason: str,
-    amount: str,
-    plate: str,
-    evidence: discord.Attachment,
-    extra_evidence: discord.Attachment | None
-):
-    return (
-        "**__تم اصدار مخالفه\n\n"
-        f"العسكري : {military.mention}\n\n"
-        f"المخالف : {violator.mention}\n\n"
-        f"سبب المخالفه : {reason}\n\n"
-        f"مبلغ المخالفه : {amount}\n\n"
-        f"الوحه : {plate}\n\n"
-        f"الدليل : {evidence.url}\n\n"
-        f"الدليل الإضافي : "
-        f"{extra_evidence.url if extra_evidence else 'لا يوجد'}\n\n\n"
-        "..\n\n"
-        "__**"
-    )
+selected_roles = {}
 
 
 # =========================================================
-# تحديث حالة المخالفة
+# VIEW
 # =========================================================
 
-async def update_violation_status(
-    interaction: discord.Interaction,
-    emoji: str
-):
-    thread = interaction.channel
-
-    if not isinstance(thread, discord.Thread):
-        return await interaction.response.send_message(
-            "❌ الزر يعمل داخل Thread المخالفة فقط.",
-            ephemeral=True
-        )
-
-    message_id = thread.message_id
-
-    if not message_id:
-        return await interaction.response.send_message(
-            "❌ لم أستطع العثور على الرسالة الأساسية.",
-            ephemeral=True
-        )
-
-    parent = thread.parent
-
-    if parent is None:
-        return await interaction.response.send_message(
-            "❌ لم أستطع العثور على روم المخالفة.",
-            ephemeral=True
-        )
-
-    try:
-        # جلب الرسالة الأساسية التي بدأ منها الـ Thread
-        original_message = await parent.fetch_message(message_id)
-
-        content = original_message.content
-
-        # إزالة أي حالة قديمة بالكامل
-        content = content.replace(UNPAID_EMOJI, "")
-        content = content.replace(PAID_EMOJI, "")
-
-        # إضافة الحالة الجديدة مرة واحدة فقط
-        new_content = content.rstrip() + f"\n\n{emoji}"
-
-        await original_message.edit(
-            content=new_content
-        )
-
-        if emoji == PAID_EMOJI:
-            message = "تم السداد وتحديث حالة المخالفة."
-        else:
-            message = "تم تغيير حالة المخالفة إلى لم يتم السداد."
-
-        await interaction.response.send_message(
-            f"✅ {message}",
-            ephemeral=True
-        )
-
-    except discord.Forbidden:
-        await interaction.response.send_message(
-            "❌ البوت لا يملك صلاحية تعديل الرسالة.",
-            ephemeral=True
-        )
-
-    except discord.NotFound:
-        await interaction.response.send_message(
-            "❌ لم أستطع العثور على الرسالة الأساسية.",
-            ephemeral=True
-        )
-
-    except discord.HTTPException:
-        await interaction.response.send_message(
-            "❌ حدث خطأ أثناء تعديل المخالفة.",
-            ephemeral=True
-        )
-
-
-# =========================================================
-# أزرار السداد
-# =========================================================
-
-class ViolationView(discord.ui.View):
+class GvView(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
 
+    # =====================================================
+    # رول اونر
+    # =====================================================
+
     @discord.ui.button(
-        label="تم السداد",
+        label="رول اونر",
+        style=discord.ButtonStyle.primary,
+        custom_id="gv_role_owner"
+    )
+    async def owner_button(self, interaction: discord.Interaction, button):
+
+        selected_roles[interaction.user.id] = "owner"
+
+        channel = interaction.guild.get_channel(OWNER_CHANNEL_ID)
+
+        if channel is None:
+            await interaction.response.send_message(
+                "❌ روم رول أونري غير موجود.",
+                ephemeral=True
+            )
+            return
+
+        message = await channel.send(
+            f"""# رول بـلاي 🎮
+
+- الهوست: {interaction.user.mention}
+
+- لي اضافه هوست توجه <#1532414489561927843>
+
+
+- لي تصويت اضغط ✅
+
+<@&1532414257772101812>"""
+        )
+
+        # علامة صح فقط على رسالة الرول
+        await message.add_reaction("✅")
+
+        await interaction.response.send_message(
+            "✅ تم إرسال الرول في روم رول أونري.",
+            ephemeral=True
+        )
+
+    # =====================================================
+    # رول بلاي GV
+    # =====================================================
+
+    @discord.ui.button(
+        label="رول بلاي GV",
+        style=discord.ButtonStyle.primary,
+        custom_id="gv_role_play"
+    )
+    async def play_button(self, interaction: discord.Interaction, button):
+
+        selected_roles[interaction.user.id] = "play"
+
+        channel = interaction.guild.get_channel(PLAY_CHANNEL_ID)
+
+        if channel is None:
+            await interaction.response.send_message(
+                "❌ روم رول بلاي غير موجود.",
+                ephemeral=True
+            )
+            return
+
+        message = await channel.send(
+            f"""# رول بـلاي 🎮
+
+- الهوست: {interaction.user.mention}
+
+- لي اضافه هوست توجه <#1532414489561927843>
+
+
+- لي تصويت اضغط ✅
+
+<@&1532414257772101812>"""
+        )
+
+        # علامة صح فقط على رسالة الرول
+        await message.add_reaction("✅")
+
+        await interaction.response.send_message(
+            "✅ تم إرسال الرول في روم رول بلاي.",
+            ephemeral=True
+        )
+
+    # =====================================================
+    # بداية الرول
+    # =====================================================
+
+    @discord.ui.button(
+        label="بداية الرول",
         style=discord.ButtonStyle.success,
-        custom_id="violation_paid"
+        custom_id="gv_role_start"
     )
-    async def paid(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await update_violation_status(
-            interaction,
-            PAID_EMOJI
+    async def start_button(self, interaction: discord.Interaction, button):
+
+        selected_role = selected_roles.get(interaction.user.id)
+
+        if selected_role is None:
+            await interaction.response.send_message(
+                "❌ اختر رول أونري أو رول بلاي أولاً.",
+                ephemeral=True
+            )
+            return
+
+        channel_id = (
+            OWNER_CHANNEL_ID
+            if selected_role == "owner"
+            else PLAY_CHANNEL_ID
         )
+
+        channel = interaction.guild.get_channel(channel_id)
+
+        if channel is None:
+            await interaction.response.send_message(
+                "❌ روم الرول غير موجود.",
+                ephemeral=True
+            )
+            return
+
+        rules_message = f"""# قـوانـيـن رول بـلاي 
+
+- بـسم الله الرحمن الرحيم توكلنا على الله 
+
+
+- الهوست: {interaction.user.mention}
+
+- سرعه المسار الايمن 60 والايسر 65
+
+- ممنوع الهروب من الاداره والهوست
+
+- احترام قرارات هوست والاداره 
+
+- تخريبك يؤدي لعقوبتك
+
+- ممنوع استخدام  <#1532414397245296700> 
+
+- ممنوع وضع لوحات مميزه بدون تصريح
+
+- تواصل داخل رومين <#1532414490694385895> ورم صوتي
+
+- الاداره تتمنى لكم رول جميل وهادئ
+
+<@&1532414257772101812>
+
+<#1532414374789255419>"""
+
+        await channel.send(rules_message)
+
+        await interaction.response.send_message(
+            "✅ تم إرسال بداية الرول.",
+            ephemeral=True
+        )
+
+    # =====================================================
+    # قفلت الرول
+    # =====================================================
 
     @discord.ui.button(
-        label="لم يتم السداد",
+        label="قفلت الرول",
         style=discord.ButtonStyle.danger,
-        custom_id="violation_unpaid"
+        custom_id="gv_role_close"
     )
-    async def unpaid(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await update_violation_status(
-            interaction,
-            UNPAID_EMOJI
+    async def close_button(self, interaction: discord.Interaction, button):
+
+        selected_role = selected_roles.get(interaction.user.id)
+
+        if selected_role is None:
+            await interaction.response.send_message(
+                "❌ اختر رول أونري أو رول بلاي أولاً.",
+                ephemeral=True
+            )
+            return
+
+        channel_id = (
+            OWNER_CHANNEL_ID
+            if selected_role == "owner"
+            else PLAY_CHANNEL_ID
         )
 
+        channel = interaction.guild.get_channel(channel_id)
+
+        if channel is None:
+            await interaction.response.send_message(
+                "❌ روم الرول غير موجود.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        evaluation_message = f"""# تقييم رول 🎮
+
+- الهوست: {interaction.user.mention}
+
+- اذا عجبك ✅ إذا لا ❌ ذكر سبب بشات العام 
+
+- ملاحظه 🔴
+
+- اذا متبلك ممنوع تصوت في حال تصويتك يحق للهوست رفع تذكره وتتم معاقبتك
+
+<@&1532414257772101812>"""
+
+        message = await channel.send(evaluation_message)
+
+        # التقييم = صح + غلط
+        await message.add_reaction("✅")
+        await message.add_reaction("❌")
+
+        await interaction.followup.send(
+            "✅ تم قفل الرول وإرسال التقييم.",
+            ephemeral=True
+        )
+
+        # =================================================
+        # بعد 10 دقائق حذف رسائل البوت من روم الرول
+        # =================================================
+
+        await asyncio.sleep(600)
+
+        try:
+            async for msg in channel.history(limit=100):
+
+                if msg.author == self.view.bot.user:
+                    await msg.delete()
+
+        except discord.HTTPException:
+            pass
+
+    # =====================================================
+    # إرسال الكود
+    # =====================================================
+
+    @discord.ui.button(
+        label="إرسال الكود",
+        style=discord.ButtonStyle.secondary,
+        custom_id="gv_role_code"
+    )
+    async def code_button(self, interaction: discord.Interaction, button):
+
+        class CodeModal(discord.ui.Modal, title="إرسال الكود"):
+
+            code = discord.ui.TextInput(
+                label="الكود",
+                placeholder="اكتب الكود هنا",
+                required=True
+            )
+
+            async def on_submit(self, modal_interaction):
+
+                channel = modal_interaction.guild.get_channel(
+                    CODE_CHANNEL_ID
+                )
+
+                if channel is None:
+                    await modal_interaction.response.send_message(
+                        "❌ روم الأكواد غير موجود.",
+                        ephemeral=True
+                    )
+                    return
+
+                await channel.send(
+                    f"""# كود الرول حاليا هو : 
+
+
+
+
+{self.code.value}
+
+
+
+
+# يرجى كتابة اسمك أدناه لتتجنب البلوك !"""
+                )
+
+                await modal_interaction.response.send_message(
+                    "✅ تم إرسال الكود.",
+                    ephemeral=True
+                )
+
+        await interaction.response.send_modal(CodeModal())
+
 
 # =========================================================
-# Violations Cog
+# COG
 # =========================================================
 
-class Violations(commands.Cog):
+class GvRoles(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(
-        name="mokhalfa",
-        description="إصدار مخالفة"
-    )
-    @app_commands.describe(
-        military="العسكري",
-        violator="المخالف",
-        reason="سبب المخالفة",
-        amount="مبلغ المخالفة",
-        plate="اللوحة",
-        evidence="الدليل - صورة",
-        extra_evidence="الدليل الإضافي - صورة اختيارية"
-    )
-    async def issue(
-        self,
-        interaction: discord.Interaction,
-        military: discord.Member,
-        violator: discord.Member,
-        reason: str,
-        amount: str,
-        plate: str,
-        evidence: discord.Attachment,
-        extra_evidence: discord.Attachment | None = None
-    ):
-        await interaction.response.defer(ephemeral=True)
-
-        # =====================================================
-        # التأكد من أن الأمر داخل سيرفر
-        # =====================================================
-
-        if interaction.guild is None:
-            return await interaction.followup.send(
-                "❌ هذا الأمر يعمل داخل السيرفر فقط.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # رومات المخالفات
-        # =====================================================
-
-        channel_ids = VIOLATION_CHANNEL_ID
-
-        if not isinstance(channel_ids, (list, tuple, set)):
-            channel_ids = [channel_ids]
-
-        channels = []
-
-        for channel_id in channel_ids:
-            try:
-                channel_id = int(channel_id)
-            except (TypeError, ValueError):
-                continue
-
-            channel = interaction.guild.get_channel(channel_id)
-
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(
-                        channel_id
-                    )
-                except (
-                    discord.NotFound,
-                    discord.Forbidden,
-                    discord.HTTPException
-                ):
-                    continue
-
-            if isinstance(channel, discord.TextChannel):
-                if channel.id not in [c.id for c in channels]:
-                    channels.append(channel)
-
-        if not channels:
-            return await interaction.followup.send(
-                "❌ لم أجد رومات المخالفات.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # التحقق من الدليل الأساسي
-        # =====================================================
-
-        if (
-            evidence.content_type is None
-            or not evidence.content_type.startswith("image/")
-        ):
-            return await interaction.followup.send(
-                "❌ الدليل الأساسي يجب أن يكون صورة.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # التحقق من الدليل الإضافي
-        # =====================================================
-
-        if (
-            extra_evidence is not None
-            and (
-                extra_evidence.content_type is None
-                or not extra_evidence.content_type.startswith(
-                    "image/"
-                )
-            )
-        ):
-            return await interaction.followup.send(
-                "❌ الدليل الإضافي يجب أن يكون صورة.",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # إنشاء رسالة المخالفة
-        # =====================================================
-
-        violation_text = create_violation_text(
-            military=military,
-            violator=violator,
-            reason=reason,
-            amount=amount,
-            plate=plate,
-            evidence=evidence,
-            extra_evidence=extra_evidence
-        )
-
-        # =====================================================
-        # إرسال المخالفة
-        # =====================================================
-
-        sent_messages = []
-
-        for channel in channels:
-
-            try:
-                # العلامة الافتراضية = لم يتم السداد
-                initial_content = (
-                    violation_text.rstrip()
-                    + f"\n\n{UNPAID_EMOJI}"
-                )
-
-                # إرسال الرسالة فقط
-                # لا يتم إرسال الصورة كـ attachment
-                # حتى لا تظهر مرتين
-                message = await channel.send(
-                    content=initial_content,
-                    allowed_mentions=discord.AllowedMentions(
-                        users=True
-                    )
-                )
-
-                sent_messages.append(message)
-
-                # =================================================
-                # إنشاء Thread من نفس رسالة المخالفة
-                # =================================================
-
-                try:
-                    thread = await message.create_thread(
-                        name=f"مخالفة - {violator.display_name}"
-                    )
-
-                    await thread.send(
-                        "اختر حالة السداد:",
-                        view=ViolationView()
-                    )
-
-                except (
-                    discord.Forbidden,
-                    discord.HTTPException
-                ):
-                    pass
-
-            except (
-                discord.Forbidden,
-                discord.HTTPException
-            ):
-                continue
-
-        # =====================================================
-        # لم يتم الإرسال
-        # =====================================================
-
-        if not sent_messages:
-            return await interaction.followup.send(
-                "❌ لم أستطع إرسال المخالفة إلى أي روم.\n\n"
-                "تأكد من صلاحيات البوت:\n"
-                "• View Channel\n"
-                "• Send Messages\n"
-                "• Create Public Threads\n"
-                "• Send Messages in Threads",
-                ephemeral=True
-            )
-
-        # =====================================================
-        # إرسال نسخة للمخالف بالخاص
-        # =====================================================
-
-        try:
-            # الرابط موجود داخل الرسالة بالفعل
-            # لذلك لا نرسل الصورة كملف مرة ثانية
-            await violator.send(
-                content=violation_text
-            )
-
-        except (
-            discord.Forbidden,
-            discord.HTTPException
-        ):
-            pass
-
-        # =====================================================
-        # تأكيد الأمر
-        # =====================================================
-
-        await interaction.followup.send(
-            "✅ تم إصدار المخالفة وإرسالها إلى "
-            f"{len(sent_messages)} روم.",
-            ephemeral=True
-        )
-
 
 # =========================================================
-# Setup
+# SETUP
 # =========================================================
 
 async def setup(bot):
-    bot.add_view(ViolationView())
-    await bot.add_cog(Violations(bot))
+
+    bot.add_view(GvView())
+
+    await bot.add_cog(GvRoles(bot))
+
+    print("✅ GV ROLES LOADED")
