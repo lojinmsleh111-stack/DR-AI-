@@ -1,3 +1,4 @@
+
 import asyncio
 import discord
 from discord.ext import commands
@@ -243,7 +244,7 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
-        # بعد 10 دقائق حذف رسائل البوت من روم الرول
+        # حذف رسائل البوت بعد 10 دقائق
         await asyncio.sleep(600)
 
         try:
@@ -318,43 +319,72 @@ class GvRoles(commands.Cog):
 
 
 # =========================================================
-# إرسال البانل
+# إرسال البنل
 # =========================================================
 
 async def send_panel(bot):
 
-    channel = bot.get_channel(PANEL_CHANNEL_ID)
+    try:
+        channel = bot.get_channel(PANEL_CHANNEL_ID)
 
-    if channel is None:
+        # إذا لم يكن الروم موجودًا في الكاش
+        if channel is None:
+            channel = await bot.fetch_channel(PANEL_CHANNEL_ID)
+
+    except discord.NotFound:
         print("❌ PANEL CHANNEL NOT FOUND")
         return
 
-    # نبحث عن بانل موجود فيه custom_id الخاص بنا
-    async for message in channel.history(limit=100):
+    except discord.Forbidden:
+        print("❌ BOT HAS NO PERMISSION TO ACCESS PANEL CHANNEL")
+        return
 
-        if message.author != bot.user:
-            continue
+    except discord.HTTPException as e:
+        print(f"❌ ERROR FETCHING PANEL CHANNEL: {e}")
+        return
 
-        for row in message.components:
-            for component in row.children:
+    # منع إرسال أكثر من بنل
+    try:
+        async for message in channel.history(limit=100):
 
-                if component.custom_id == "gv_role_owner":
-                    print("✅ GV PANEL ALREADY EXISTS")
-                    return
+            if message.author != bot.user:
+                continue
 
-    # إنشاء البانل
+            for row in message.components:
+
+                for component in row.children:
+
+                    if getattr(component, "custom_id", None) == "gv_role_owner":
+                        print("✅ GV PANEL ALREADY EXISTS")
+                        return
+
+    except discord.Forbidden:
+        print("⚠️ لا توجد صلاحية قراءة سجل الرسائل، سيتم إرسال البنل.")
+
+    except discord.HTTPException as e:
+        print(f"⚠️ خطأ أثناء فحص البنل: {e}")
+
+    # إنشاء البنل
     embed = discord.Embed(
         title="رول بـلاي 🎮",
         description="اختار نوع الرول من الأزرار بالأسفل.",
         color=discord.Color.blue()
     )
 
-    await channel.send(
-        embed=embed,
-        view=GvView()
-    )
+    try:
 
-    print("✅ GV PANEL SENT")
+        await channel.send(
+            embed=embed,
+            view=GvView()
+        )
+
+        print("✅ GV PANEL SENT")
+
+    except discord.Forbidden:
+        print("❌ BOT HAS NO PERMISSION TO SEND PANEL")
+
+    except discord.HTTPException as e:
+        print(f"❌ ERROR SENDING PANEL: {e}")
 
 
 # =========================================================
@@ -363,12 +393,12 @@ async def send_panel(bot):
 
 async def setup(bot):
 
-    # تسجيل الـ View للأزرار الموجودة مسبقًا
+    # تسجيل الأزرار حتى تظل تعمل بعد إعادة تشغيل البوت
     bot.add_view(GvView())
 
     await bot.add_cog(GvRoles(bot))
 
-    # إرسال البانل
+    # إرسال البنل تلقائيًا عند تشغيل البوت
     await send_panel(bot)
 
     print("✅ GV ROLES LOADED")
