@@ -13,13 +13,10 @@ PLAY_CHANNEL_ID = 1532414474437394482
 CODE_CHANNEL_ID = 1532414489561927843
 
 ROLE_ID = 1532414257772101812
-NO_USE_CHANNEL_ID = 1532414397245296700
-HOST_CHAT_CHANNEL_ID = 1532414490694385895
-RULES_CHANNEL_ID = 1532414374789255419
 
 
 # =========================================================
-# ROLE SELECTION
+# اختيار الرول لكل مستخدم
 # =========================================================
 
 selected_roles = {}
@@ -43,7 +40,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="gv_role_owner"
     )
-    async def owner_button(self, interaction: discord.Interaction, button):
+    async def owner_button(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         selected_roles[interaction.user.id] = "owner"
 
@@ -69,7 +66,6 @@ class GvView(discord.ui.View):
 <@&1532414257772101812>"""
         )
 
-        # علامة صح فقط على رسالة الرول
         await message.add_reaction("✅")
 
         await interaction.response.send_message(
@@ -86,7 +82,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.primary,
         custom_id="gv_role_play"
     )
-    async def play_button(self, interaction: discord.Interaction, button):
+    async def play_button(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         selected_roles[interaction.user.id] = "play"
 
@@ -112,7 +108,6 @@ class GvView(discord.ui.View):
 <@&1532414257772101812>"""
         )
 
-        # علامة صح فقط على رسالة الرول
         await message.add_reaction("✅")
 
         await interaction.response.send_message(
@@ -129,7 +124,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.success,
         custom_id="gv_role_start"
     )
-    async def start_button(self, interaction: discord.Interaction, button):
+    async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         selected_role = selected_roles.get(interaction.user.id)
 
@@ -190,7 +185,7 @@ class GvView(discord.ui.View):
         )
 
     # =====================================================
-    # قفلت الرول
+    # قفلت الرول + التقييم
     # =====================================================
 
     @discord.ui.button(
@@ -198,7 +193,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.danger,
         custom_id="gv_role_close"
     )
-    async def close_button(self, interaction: discord.Interaction, button):
+    async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         selected_role = selected_roles.get(interaction.user.id)
 
@@ -240,7 +235,6 @@ class GvView(discord.ui.View):
 
         message = await channel.send(evaluation_message)
 
-        # التقييم = صح + غلط
         await message.add_reaction("✅")
         await message.add_reaction("❌")
 
@@ -249,18 +243,13 @@ class GvView(discord.ui.View):
             ephemeral=True
         )
 
-        # =================================================
         # بعد 10 دقائق حذف رسائل البوت من روم الرول
-        # =================================================
-
         await asyncio.sleep(600)
 
         try:
             async for msg in channel.history(limit=100):
-
-                if msg.author == self.view.bot.user:
+                if msg.author == interaction.client.user:
                     await msg.delete()
-
         except discord.HTTPException:
             pass
 
@@ -273,7 +262,7 @@ class GvView(discord.ui.View):
         style=discord.ButtonStyle.secondary,
         custom_id="gv_role_code"
     )
-    async def code_button(self, interaction: discord.Interaction, button):
+    async def code_button(self, interaction: discord.Interaction, button: discord.ui.Button):
 
         class CodeModal(discord.ui.Modal, title="إرسال الكود"):
 
@@ -283,7 +272,7 @@ class GvView(discord.ui.View):
                 required=True
             )
 
-            async def on_submit(self, modal_interaction):
+            async def on_submit(self, modal_interaction: discord.Interaction):
 
                 channel = modal_interaction.guild.get_channel(
                     CODE_CHANNEL_ID
@@ -329,13 +318,57 @@ class GvRoles(commands.Cog):
 
 
 # =========================================================
+# إرسال البانل
+# =========================================================
+
+async def send_panel(bot):
+
+    channel = bot.get_channel(PANEL_CHANNEL_ID)
+
+    if channel is None:
+        print("❌ PANEL CHANNEL NOT FOUND")
+        return
+
+    # نبحث عن بانل موجود فيه custom_id الخاص بنا
+    async for message in channel.history(limit=100):
+
+        if message.author != bot.user:
+            continue
+
+        for row in message.components:
+            for component in row.children:
+
+                if component.custom_id == "gv_role_owner":
+                    print("✅ GV PANEL ALREADY EXISTS")
+                    return
+
+    # إنشاء البانل
+    embed = discord.Embed(
+        title="رول بـلاي 🎮",
+        description="اختار نوع الرول من الأزرار بالأسفل.",
+        color=discord.Color.blue()
+    )
+
+    await channel.send(
+        embed=embed,
+        view=GvView()
+    )
+
+    print("✅ GV PANEL SENT")
+
+
+# =========================================================
 # SETUP
 # =========================================================
 
 async def setup(bot):
 
+    # تسجيل الـ View للأزرار الموجودة مسبقًا
     bot.add_view(GvView())
 
     await bot.add_cog(GvRoles(bot))
+
+    # إرسال البانل
+    await send_panel(bot)
 
     print("✅ GV ROLES LOADED")
