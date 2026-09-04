@@ -44,24 +44,27 @@ def load_users() -> dict:
         try:
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"USERS LOAD ERROR: {e}")
 
     return {}
 
 
 def save_users(data: dict):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            data,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+    except Exception as e:
+        logger.error(f"USERS SAVE ERROR: {e}")
 
 
 # =========================================================
-# Get Emoji
+# Get Custom Emoji
 # =========================================================
 
 async def get_custom_emoji(
@@ -92,7 +95,6 @@ async def update_violation_status(
     message_id: int,
     emoji_id: int
 ):
-
     try:
         guild = interaction.guild
 
@@ -163,7 +165,7 @@ async def update_violation_status(
 
     except Exception as e:
         logger.error(
-            f"Error updating violation status: {e}"
+            f"ERROR UPDATING VIOLATION STATUS: {e}"
         )
         return False
 
@@ -182,7 +184,6 @@ class ViolationStatusButton(
         status: str,
         message_id: int
     ):
-
         self.status = status
         self.message_id = message_id
 
@@ -222,7 +223,6 @@ class ViolationStatusButton(
         self,
         interaction: discord.Interaction
     ):
-
         await interaction.response.defer(
             ephemeral=True
         )
@@ -234,7 +234,7 @@ class ViolationStatusButton(
             )
 
         # =====================================================
-        # صلاحية العسكري
+        # صلاحية الضابط
         # =====================================================
 
         officer_role = interaction.guild.get_role(
@@ -272,13 +272,11 @@ class ViolationStatusButton(
                 ) == str(
                     self.message_id
                 ):
-
                     found_ticket = (
                         user_id,
                         index,
                         ticket
                     )
-
                     break
 
             if found_ticket:
@@ -360,7 +358,6 @@ class ViolationStatusButton(
                         overdue_role
                         and overdue_role in member.roles
                     ):
-
                         try:
 
                             await member.remove_roles(
@@ -396,7 +393,6 @@ class ViolationView(discord.ui.View):
         self,
         message_id: int
     ):
-
         super().__init__(
             timeout=None
         )
@@ -426,14 +422,11 @@ class Tickets(commands.Cog):
         self,
         bot
     ):
-
         self.bot = bot
 
-        # تشغيل فحص المخالفات المتأخرة
         self.check_overdue_tickets.start()
 
     def cog_unload(self):
-
         self.check_overdue_tickets.cancel()
 
     # =====================================================
@@ -486,7 +479,7 @@ class Tickets(commands.Cog):
             )
 
         # =====================================================
-        # صلاحية العسكري
+        # صلاحية إصدار المخالفة
         # =====================================================
 
         staff_role = interaction.guild.get_role(
@@ -503,7 +496,7 @@ class Tickets(commands.Cog):
             )
 
         # =====================================================
-        # المبلغ
+        # التحقق من المبلغ
         # =====================================================
 
         if amount <= 0:
@@ -513,7 +506,7 @@ class Tickets(commands.Cog):
             )
 
         # =====================================================
-        # الدليل
+        # التحقق من الدليل
         # =====================================================
 
         if (
@@ -526,7 +519,7 @@ class Tickets(commands.Cog):
             )
 
         # =====================================================
-        # RP ID
+        # تحميل بيانات المستخدم
         # =====================================================
 
         users = load_users()
@@ -535,26 +528,12 @@ class Tickets(commands.Cog):
             target.id
         )
 
-        existing_data = users.get(
-            user_key,
-            {}
-        )
-
-        rp_id = existing_data.get(
-            "rp_id",
-            "غير مسجل"
-        )
-
-        # =====================================================
-        # إنشاء بيانات المستخدم
-        # =====================================================
-
         if user_key not in users:
 
             users[user_key] = {
                 "discord_tag": str(target),
                 "real_name": target.display_name,
-                "rp_id": rp_id,
+                "rp_id": "غير مسجل",
                 "tickets": [],
                 "permits": []
             }
@@ -589,7 +568,7 @@ class Tickets(commands.Cog):
         save_users(users)
 
         # =====================================================
-        # نموذج المخالفة - نفس النموذج المطلوب
+        # نموذج المخالفة
         # =====================================================
 
         violation_text = (
@@ -606,7 +585,7 @@ class Tickets(commands.Cog):
         )
 
         # =====================================================
-        # إرسال الرسالة
+        # إرسال المخالفة
         # =====================================================
 
         try:
@@ -641,7 +620,6 @@ class Tickets(commands.Cog):
                 f"VIOLATION SEND ERROR: {e}"
             )
 
-            # حذف السجل الذي تم إنشاؤه إذا فشل الإرسال
             try:
                 users[user_key]["tickets"].pop(
                     ticket_index
@@ -662,6 +640,7 @@ class Tickets(commands.Cog):
         users = load_users()
 
         try:
+
             users[user_key]["tickets"][
                 ticket_index
             ]["message_id"] = message.id
@@ -686,10 +665,13 @@ class Tickets(commands.Cog):
         if unpaid_emoji:
 
             try:
+
                 await message.add_reaction(
                     unpaid_emoji
                 )
+
             except Exception as e:
+
                 logger.error(
                     f"UNPAID REACTION ERROR: {e}"
                 )
@@ -718,7 +700,7 @@ class Tickets(commands.Cog):
             )
 
         # =====================================================
-        # إرسال الخاص للمخالف
+        # إرسال المخالفة للخاص
         # =====================================================
 
         try:
@@ -743,7 +725,7 @@ class Tickets(commands.Cog):
             )
 
         # =====================================================
-        # التأكيد للعسكري
+        # تأكيد الإصدار
         # =====================================================
 
         await interaction.followup.send(
@@ -755,7 +737,7 @@ class Tickets(commands.Cog):
     # فحص المخالفات المتأخرة
     # =====================================================
 
-  @tasks.loop(hours=1)
+    @tasks.loop(hours=1)
     async def check_overdue_tickets(self):
 
         try:
@@ -763,8 +745,6 @@ class Tickets(commands.Cog):
             users = load_users()
 
             now = datetime.now()
-
-            changed = False
 
             for user_id, data in users.items():
 
@@ -777,25 +757,31 @@ class Tickets(commands.Cog):
 
                 for ticket in tickets:
 
-                    if ticket.get("paid", False):
+                    if ticket.get(
+                        "paid",
+                        False
+                    ):
                         continue
 
                     issued_at = ticket.get(
                         "issued_at"
-                    )
+         )
 
                     if not issued_at:
                         continue
 
                     try:
+
                         issued_date = datetime.fromisoformat(
                             issued_at
                         )
+
                     except Exception:
                         continue
 
-                    if now - issued_date >= timedelta(
-                        days=7
+                    if (
+                        now - issued_date
+                        >= timedelta(days=7)
                     ):
                         has_overdue = True
                         break
@@ -839,9 +825,6 @@ class Tickets(commands.Cog):
                             f"OVERDUE ROLE ERROR: {e}"
                         )
 
-            if changed:
-                save_users(users)
-
         except Exception as e:
 
             logger.error(
@@ -864,7 +847,7 @@ async def setup(bot):
         Tickets(bot)
     )
 
-    # مهم حتى تشتغل الأزرار القديمة بعد إعادة تشغيل البوت
+    # تسجيل Dynamic Buttons
     bot.add_dynamic_items(
         ViolationStatusButton
     )
